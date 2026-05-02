@@ -9,8 +9,8 @@
       Title="Configure">
 
     <Grid>
-        <Button Content="Update Whitelist" HorizontalAlignment="Left" Height="37" Margin="10,10,0,0" VerticalAlignment="Top" Width="133"/>
-        <Button Content="Run Update" HorizontalAlignment="Left" Height="37" Margin="174,10,0,0" VerticalAlignment="Top" Width="123"/>
+        <Button Content="Update Whitelist" Click="Update_Whitelist_Click" HorizontalAlignment="Left" Height="37" Margin="10,10,0,0" VerticalAlignment="Top" Width="133"/>
+        <Button Content="Run Update" Click="Run_Update_Click" HorizontalAlignment="Left" Height="37" Margin="174,10,0,0" VerticalAlignment="Top" Width="123"/>
 
     </Grid>
 </Page>

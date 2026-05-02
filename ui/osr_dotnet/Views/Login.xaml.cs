@@ -55,9 +55,8 @@ namespace osr_dotnet.Views
             }
             else
             {
-
+                this.NavigationService.Navigate(new Configure());
             }
-
         }
     }
 }

@@ -60,6 +60,7 @@ namespace osr_dotnet.Views
             window.setWhitelist(whitelist);
             window.finishUserInitialization();
             await window.initZip();
+            this.NavigationService.Navigate(new Configure());
         }
     }
 }
