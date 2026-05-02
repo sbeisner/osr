@@ -11,7 +11,6 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
-using Microsoft.Azure.Cosmos;
 
 namespace osr_dotnet.Views
 {
@@ -25,7 +24,7 @@ namespace osr_dotnet.Views
         private const string LOGIN_PATH = "Login.xaml";
         private const string ACCOUNT_CREATE_PATH = "AccountCreate.xaml";
         private int window_state = 0;
-        public CosmosController cosmosController;
+        public LocalUserStore userStore;
         public FileSystemController fileSystemController;
         private User activeUser;
 
@@ -52,7 +51,7 @@ namespace osr_dotnet.Views
 
         public async void asyncIntialize()
         {
-            cosmosController = await startDatabaseController();
+            userStore = await startUserStore();
             loadFileSystemController();
             DataContext = this;
             InitializeComponent();
@@ -63,25 +62,18 @@ namespace osr_dotnet.Views
             fileSystemController = new FileSystemController();
         }
 
-        private async Task<CosmosController> startDatabaseController()
+        private async Task<LocalUserStore> startUserStore()
         {
-            CosmosController cC;
             try
             {
-                cC = new CosmosController();
+                var store = new LocalUserStore();
                 Console.WriteLine("Booting...\n");
-                await cC.startAsync();
-                return cC;
-            }
-            catch (CosmosException de)
-            {
-                Exception baseException = de.GetBaseException();
-                Console.WriteLine("{0} error occured: {1}", de.StatusCode, de);
-                return null;
+                await store.startAsync();
+                return store;
             }
             catch (Exception e)
             {
-                Console.WriteLine("Error: {0}", e);
+                Console.WriteLine("Error loading user store: {0}", e);
                 return null;
             }
             finally
@@ -89,9 +81,10 @@ namespace osr_dotnet.Views
                 Console.WriteLine("End of startup");
             }
         }
-        public CosmosController getCosmosController()
+
+        public LocalUserStore getUserStore()
         {
-            return cosmosController;
+            return userStore;
         }
 
         public void setActiveUser(User user)
@@ -107,19 +100,19 @@ namespace osr_dotnet.Views
         public async void setUserDir(string dir)
         {
             activeUser.TrackedDir = dir;
-            await cosmosController.UpdateUser(activeUser);
+            await userStore.UpdateUser(activeUser);
         }
 
         public async void setWhitelist(string whitelist)
         {
             activeUser.Whitelist = whitelist;
-            await cosmosController.UpdateUser(activeUser);
+            await userStore.UpdateUser(activeUser);
         }
 
         public async void finishUserInitialization()
         {
             activeUser.IsInitialized = "true";
-            await cosmosController.UpdateUser(activeUser);
+            await userStore.UpdateUser(activeUser);
         }
 
         public void initZip()

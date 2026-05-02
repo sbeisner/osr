@@ -8,40 +8,33 @@ suggested order of work — not a sales pitch.
 
 The `engine/` directory contains a working prototype of the core concept.
 The `ui/` directory contains the start of a productized WPF app on top of
-that concept; it builds but is not feature-complete and depends on an Azure
-Cosmos DB account that is no longer accessible (see "Cosmos DB situation"
-below).
+that concept; it builds and runs out of the box (no cloud dependency) but
+the ISO builder and the post-setup configuration screen are unfinished.
 
 If you want to revive this project, the highest-value path is probably:
 1. Decide whether to keep the VirtualBox-based `engine/` approach at all,
    or replace it with one of the off-the-shelf tools listed at the bottom.
-2. Either way, decide what role (if any) the `ui/` codebase plays.
+2. Either way, decide what role (if any) the `ui/` codebase plays — and
+   how (if at all) you want to wire it to the engine.
 3. Address the security and design issues called out below before any
    real-user deployment.
 
-## Cosmos DB situation
+## Origins / what was removed
 
-`ui/osr_dotnet/Controllers/CosmosController.cs` originally contained a
-hardcoded Azure Cosmos DB endpoint and primary key for an `osr-dev` instance.
-Those literals have been removed and replaced with a read from
-`App.config <appSettings>`; the placeholders intentionally cause the app to
-refuse to start until populated.
+`ui/osr_dotnet/Controllers/CosmosController.cs` originally hosted user data
+in Azure Cosmos DB, with a hardcoded endpoint and primary key for an
+`osr-dev` instance. That whole controller has been replaced with
+`LocalUserStore.cs`, which persists users as JSON at
+`%LOCALAPPDATA%\osr\users.json`. The public surface of the class
+(`startAsync`, `AddUsersToContainerAsync`, `UpdateUser`, `QueryUsersAsync`)
+is the same shape, so swapping in a real backend later is a focused change.
 
-**The original Cosmos DB account is still alive on Azure** but the original
-owner no longer has access credentials. The leaked primary key may continue
-to work indefinitely. If you decide to keep the Cosmos-based design, you
-should:
-
-1. Provision your own Cosmos DB account and database.
-2. Populate `Cosmos:Endpoint` and `Cosmos:Key` in `ui/osr_dotnet/App.config`.
-3. **Do not commit real credentials.** Consider moving them to environment
-   variables or a sibling `App.Local.config` (already in `.gitignore`).
-
-A simpler alternative is to drop Cosmos entirely and persist users +
-whitelist to a local JSON file under `%LOCALAPPDATA%\osr\`. The UI was
-designed to support a per-machine multi-user model, but in the original
-nursing-home use case there is rarely more than one "operator" identity per
-station, so a local store may be sufficient.
+The original Cosmos DB account on Azure is still alive — neither original
+owner has access credentials anymore — but the leaked key is no longer
+referenced from this codebase or its history. If you want a real backend
+later, the cleanest pattern is to extract `LocalUserStore`'s public surface
+into an `IUserStore` interface and provide a second implementation; nothing
+else in the UI binds to the storage type.
 
 ## Component-by-component state
 
@@ -73,13 +66,18 @@ Known issues:
 
 ### `ui/osr_dotnet/` — WPF configurator
 
-Status: **builds, partial functionality**, depends on Cosmos.
+Status: **builds, runs, partial functionality**. No external service
+dependencies.
 
 What works:
 
 - Project compiles under Visual Studio 2019+ targeting .NET Framework 4.7.2,
   after a NuGet restore.
 - Page navigation through Login → AccountCreate → SelectUser → FirstTimeSetup.
+- `LocalUserStore` persists users to `%LOCALAPPDATA%\osr\users.json`
+  (atomic write via temp-then-rename).
+- Login fails closed with a `MessageBox` if no matching user is found
+  (the original code dereferenced a null user, NRE-ing on first attempt).
 - `FileSystemController.createZipArchive()` recursively zips a configured
   source directory into `C:\Program Files\osr_refresh\clean<userId>.zip`.
 - `SelectUser.xaml.cs` enumerates Windows local accounts via WMI
@@ -93,18 +91,25 @@ What is broken or missing:
 - **`Configure.xaml.cs`** is empty (default constructor only). The two
   buttons in `Configure.xaml` ("Update Whitelist", "Run Update") are not
   wired to anything.
-- **Plaintext password storage** in Cosmos. Hash on create + on lookup
-  before re-enabling for any real user. Marked `TODO(handoff)` in
-  `CosmosController.QueryUsersAsync`.
-- **Random user IDs** (`new Random().Next(2147483647)`). Use `Guid.NewGuid()`
-  instead.
+- **Plaintext password storage** in `LocalUserStore`. Hash on create + on
+  lookup before any real-user deployment. Marked `TODO(handoff)` in
+  `LocalUserStore.QueryUsersAsync`.
+- **Random user IDs** (`new Random().Next(2147483647)` in
+  `AccountCreate.Save_Account_To_DB`). Use `Guid.NewGuid()` instead.
 - **Hard-coded path** `C:\Program Files\osr_refresh` in
   `FileSystemController.OSR_DIR`. Move to `App.config` or
   `Environment.SpecialFolder.LocalApplicationData`.
+- **The UI is not wired to `engine/`.** Today the WPF app and the C++
+  shutdown/boot binaries are independent; the WPF "Run Update" button in
+  `Configure.xaml` was the intended hook. Wiring this is the most useful
+  next integration step.
 - **`Microsoft.WindowsAPICodePack`** dependency may be hard to restore from
   modern NuGet feeds; the official package was unlisted years ago. There
   are community-maintained forks; you may need to point your local feed at
   one of those.
+- **`RhinoCommon` is in `packages.config` and `osr_dotnet.csproj`.** It is
+  not used by any code in the project — it appears to have been added by
+  accident. It can be removed; left in to minimize churn during handoff.
 - No tests, no input validation on the AccountCreate form beyond
   empty-field and password-match checks.
 - `async void` in event handlers swallows exceptions silently.
@@ -136,20 +141,27 @@ What is broken or missing:
    The strongest case for continuing this project is if there is a feature
    or price point those tools don't hit.
 
-2. **If continuing: kill the Cosmos dependency.** Replace `CosmosController`
-   with a `LocalUserStore` backed by a JSON file under
-   `%LOCALAPPDATA%\osr\`. This eliminates the abandoned-Azure-account
-   problem and makes the app self-contained.
+2. **Wire the UI to the engine.** The two halves currently know nothing
+   about each other. The most natural integration: the WPF
+   `Configure.xaml` "Run Update" button shells out to the `engine/pbosr`
+   shutdown binary with a path to the user's whitelist file.
+   `FirstTimeSetup` already produces something close to that whitelist
+   shape; it just doesn't write it where the engine looks.
 
-3. **Finish `DiscUtilsController`** — actually implement the clean-ISO
-   builder. This was the architectural improvement over the VBox-swap
-   approach and is the missing piece that would let the product run on
-   bare metal.
+3. **Finish `DiscUtilsController`.** This was the architectural improvement
+   over the VBox-swap approach and is the missing piece that would let the
+   product run on bare metal instead of inside a guest VM.
 
-4. **Address the hashing / SQL injection / random-ID issues** before any
-   field deployment.
+4. **Address the hashing / random-ID issues** before any field deployment.
+   `LocalUserStore.QueryUsersAsync` carries a `TODO(handoff)` to that
+   effect; `AccountCreate` should switch to `Guid.NewGuid()` for `User.Id`.
 
-5. **Replace hardcoded paths and VM names** with config-driven values.
+5. **Replace hardcoded paths and VM names** with config-driven values
+   (the C++ side has hardcoded `\\VBoxSvr\dest`, `Dirty-2` and `Clean-2`
+   throughout; the C# side has hardcoded `C:\Program Files\osr_refresh`).
+
+6. **Prune unused dependencies.** `RhinoCommon` is referenced but not
+   used; removing it would shrink the package restore noticeably.
 
 ## Original product context
 

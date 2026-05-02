@@ -5,15 +5,15 @@ of OSR: per-user accounts, license tracking, a configurable whitelist, and
 a planned (but never finished) clean-ISO builder via the `DiscUtils`
 library.
 
-This codebase **builds** but is not end-to-end functional. Notably:
+The codebase **builds and runs with no cloud dependency**. Users persist to
+a local JSON file (see "Where data lives" below). You can create an account,
+log in, and configure a whitelist out of the box. The pieces that are still
+not finished are `DiscUtilsController` (stub — the ISO builder was never
+written) and `Configure.xaml.cs` (empty — the post-setup screen never got
+wired up).
 
-- It depends on Azure Cosmos DB and **will refuse to start** until you
-  populate `osr_dotnet/App.config` with credentials of a Cosmos account you
-  control.
-- The ISO builder (`DiscUtilsController`) is a stub.
-- It is not wired to the working `engine/` code in any way.
-
-For the full state of every component, see `../HANDOFF.md`.
+This UI is not currently wired to the `engine/` code in any way; that
+integration is a deliberate next step and is described in `../HANDOFF.md`.
 
 ## Build
 
@@ -27,37 +27,29 @@ nuget restore osr-ui.sln          # or open the .sln in Visual Studio,
 
 Then build / run from Visual Studio (F5).
 
-### Cosmos DB setup before first run
+No external services or accounts are required to run.
 
-1. Provision an Azure Cosmos DB account (any tier; the free 1000 RU/s
-   container is sufficient for development).
-2. Open `osr_dotnet/App.config`.
-3. Replace the placeholder values under `<appSettings>`:
+## Where data lives
 
-   ```xml
-   <add key="Cosmos:Endpoint" value="https://YOUR-ACCOUNT.documents.azure.com:443/" />
-   <add key="Cosmos:Key"      value="REPLACE_WITH_YOUR_COSMOS_PRIMARY_KEY" />
-   ```
+Users are stored as JSON at:
 
-4. **Do not commit your real credentials.** A `.gitignore` rule excludes
-   `App.Local.config` if you'd rather keep them in a sibling file the
-   project pulls in via a `<file>` attribute.
+```
+%LOCALAPPDATA%\osr\users.json
+```
 
-The app will throw an `InvalidOperationException` at startup if either
-placeholder is detected — that's the intentional guard. If you'd rather
-skip Cosmos entirely, see the "Suggested next steps" section in
-`../HANDOFF.md`.
+(typically `C:\Users\<you>\AppData\Local\osr\users.json`). The file is
+created on first save. To reset state, delete it.
 
 ## What the screens do today
 
 | Screen            | State                                            |
 |-------------------|--------------------------------------------------|
-| `Login`           | Queries Cosmos for `email + password` (now parameterized; was SQL-injectable). Plaintext password comparison. |
-| `AccountCreate`   | Writes a new `User` to Cosmos with plaintext password and a `Random.Next()` ID. |
+| `Login`           | Looks up `email + password` in the local user store. Plaintext password comparison — flagged in HANDOFF. |
+| `AccountCreate`   | Appends a new `User` to the local user store with plaintext password and a `Random.Next()` ID. |
 | `SelectUser`      | Enumerates Windows local accounts via WMI. Writes choice to user record. |
-| `FirstTimeSetup`  | Folder-picker over the chosen Windows user dir. Writes whitelist back to Cosmos. Triggers `FileSystemController.createZipArchive()`. |
+| `FirstTimeSetup`  | Folder-picker over the chosen Windows user dir. Writes whitelist back to the local user store. Triggers `FileSystemController.createZipArchive()`. |
 | `Configure`       | Empty. Two buttons in XAML, no click handlers wired up. |
-| `MainWindow`      | Hosts the page navigation. Async-initializes Cosmos and FileSystem controllers on construct. |
+| `MainWindow`      | Hosts the page navigation. Async-initializes the user store and the FileSystem controller on construct. |
 
 ## Structural notes
 

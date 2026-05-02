@@ -30,13 +30,13 @@ namespace osr_dotnet.Views
         private const string NO_MATCH_STATUS = "Passwords do not match. Try again.";
         private const string MISSING_FIELD_STATUS = "Please enter information for all required fields and try again";
         private MainWindow window;
-        private CosmosController cosmosController;
+        private LocalUserStore userStore;
 
         public AccountCreate()
         {
             InitializeComponent();
             window = (MainWindow)Application.Current.MainWindow;
-            cosmosController = window.getCosmosController();
+            userStore = window.getUserStore();
 
         }
 
@@ -67,7 +67,7 @@ namespace osr_dotnet.Views
                 Random random = new Random();
                 new_user.Id = random.Next(2147483647).ToString();
 
-                await cosmosController.AddUsersToContainerAsync(new_user);
+                await userStore.AddUsersToContainerAsync(new_user);
                 status_label.Content = SUCCESS_STATUS;
                 
             }

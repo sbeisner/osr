@@ -23,12 +23,12 @@ namespace osr_dotnet.Views
     public partial class Login : Page
     {
         private MainWindow window;
-        private CosmosController cosmosController;
+        private LocalUserStore userStore;
         public Login()
         {
             InitializeComponent();
             window = (MainWindow)Application.Current.MainWindow;
-            cosmosController = window.getCosmosController();
+            userStore = window.getUserStore();
 
         }
 
@@ -41,7 +41,13 @@ namespace osr_dotnet.Views
         {
             string email = email_box.Text;
             string password = password_box.Password;
-            User user = await cosmosController.QueryUsersAsync(email, password);
+            User user = await userStore.QueryUsersAsync(email, password);
+            if (user == null)
+            {
+                // No matching user; surface this in the UI rather than NRE-ing on the next line.
+                MessageBox.Show("Invalid email or password.", "Login failed");
+                return;
+            }
             window.setActiveUser(user);
             if (user.IsInitialized.Equals("false"))
             {
@@ -51,7 +57,7 @@ namespace osr_dotnet.Views
             {
 
             }
-            
+
         }
     }
 }

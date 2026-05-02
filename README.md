@@ -55,10 +55,12 @@ accounts, license tracking, a configurable whitelist, and a plan to build
 clean ISO images via the `DiscUtils` library so the system would not depend
 on VirtualBox.
 
-The UI **builds** and you can navigate the screens, but it requires an Azure
-Cosmos DB account for user/license storage that is no longer accessible.
-`DiscUtilsController` is a stub — the actual ISO-build logic was never
-written. See `ui/README.md` and `HANDOFF.md` for the full state.
+The UI **builds and runs with no cloud dependency** — users persist to a
+local JSON file at `%LOCALAPPDATA%\osr\users.json`. You can create accounts,
+log in, and configure a whitelist. The two pieces that are still incomplete:
+`DiscUtilsController` is a stub (the actual ISO-build logic was never
+written) and `Configure.xaml.cs` is empty (the post-setup screen never got
+wired up). See `ui/README.md` and `HANDOFF.md` for the full state.
 
 ## Project history
 
