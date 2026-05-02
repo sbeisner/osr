@@ -11,7 +11,11 @@ namespace osr_dotnet.Controllers
 {
     public class FileSystemController
     {
-        private const string OSR_DIR = "C:\\Program Files\\osr_refresh";
+        // Stored under %LOCALAPPDATA%\osr (typically C:\Users\<u>\AppData\Local\osr)
+        // so the app does not require admin to write archives.
+        private static readonly string OSR_DIR = System.IO.Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "osr");
         private MainWindow window;
         private bool isInitialzied = false;
         private string userDir;

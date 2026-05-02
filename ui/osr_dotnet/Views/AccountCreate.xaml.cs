@@ -64,8 +64,7 @@ namespace osr_dotnet.Views
                 new_user.DateLicenseIssued = DateTime.Today.ToString();
                 new_user.DateLicenseExpires = DateTime.Today.AddYears(1).ToString();
                 new_user.IsInitialized = "false";
-                Random random = new Random();
-                new_user.Id = random.Next(2147483647).ToString();
+                new_user.Id = Guid.NewGuid().ToString();
 
                 await userStore.AddUsersToContainerAsync(new_user);
                 status_label.Content = SUCCESS_STATUS;
