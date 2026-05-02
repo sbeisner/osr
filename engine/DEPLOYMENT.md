@@ -249,9 +249,21 @@ Reboot the host. The kiosk user auto-logs-in, the autostart entry runs
 `kiosk-loop.sh`, which calls `host.sh` repeatedly. End-users see Windows
 fullscreen and never know there's a Linux underneath.
 
-To get back to the Linux desktop for maintenance: `Ctrl+Alt+F2` to switch
-to a TTY, log in as your admin user, do whatever, switch back with
-`Ctrl+Alt+F1` (or `F7` on some installs).
+### Getting back to a Linux shell once the kiosk is locked down
+
+`setup-host.sh` deliberately disables `Ctrl+Alt+F1..F12` (TTY switching)
+and the VirtualBox host-key combo so end-users can't escape the VM by
+accident. That same lockdown applies to you while the kiosk session is
+running. To get a maintenance shell:
+
+- **From the network** (preferred): SSH in as your admin user. This is
+  the only path that scales to many machines. Pair this with Tailscale
+  or WireGuard so the admin can reach the host from anywhere — see
+  HANDOFF.md "Before deploying to real users" for why this is gating.
+- **Physically present, no network**: reboot, hold `Shift` at the
+  GRUB menu, pick "Advanced options for Ubuntu" → "recovery mode" →
+  "root shell". The kiosk session isn't running yet, so VT switching
+  works there.
 
 ## 10. Recovery scenarios
 
@@ -263,20 +275,22 @@ to a TTY, log in as your admin user, do whatever, switch back with
 | Need to add a path to the whitelist       | Edit `engine/pbosr/shutdown.cpp`, rebuild, redeploy `Shutdown.exe` to Dirty-2 |
 | Need physical access to the host          | Ctrl+Alt+F2 → log in as admin                    |
 
-## Known limitations of the current `host.sh`
+## What's still missing for paid customers
 
-These are flagged in `../HANDOFF.md` and are worth tightening before a
-production deploy with real customers:
+`host.sh` is now config-driven (env vars at the top), logs to
+`~/osr-host.log`, swaps disks via clone-then-rename (so a clone failure
+doesn't brick the machine), and snapshots the shared-folder transit dir
+for admin rollback (rolling 7-shift history under `~/osr-archive/`).
+`shutdown.cpp` and `boot.cpp` log per-entry success/failure.
+`setup-host.sh` locks down VT switching and the VBox host-key combo.
 
-- **No safety net during the disk swap**: `host.sh` runs `closemedium
-  --delete` *then* `clonemedium`. If the clone fails partway, Dirty's disk
-  is gone with no rollback. Fix: clone to `Dirty-2.vhd.new`, then atomically
-  rename. Adds two lines.
-- **`sleep 30` polling**: each cycle adds up to 30 seconds of wall time
-  past the actual VM power-off. Acceptable for nursing-home use; tighten
-  to `sleep 5` if you need quicker turnaround.
-- **Hardcoded VM names** in `host.sh`. Pull into env vars or args before
-  deploying to a second customer.
+What's still blocking a paid deploy is documented in detail in
+`../HANDOFF.md` under "Before deploying to real users" — the headline
+items being: ransomware persistence by design (the engine restores
+encrypted files dutifully alongside legitimate ones), no AV inside
+either VM, no remote-support path, no master-image clone workflow for
+multi-machine deploys, and no fleet-update story. None of these have
+been started.
 
 ## Long-term: replace this with off-the-shelf tooling
 

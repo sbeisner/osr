@@ -40,29 +40,56 @@ else in the UI binds to the storage type.
 
 ### `engine/` — VirtualBox swap implementation
 
-Status: **functional prototype**. Demonstrated end-to-end on the original
-test bench. Two C++ projects (`pbosr/` shutdown-side and `Boot/` clean-boot
-side) plus `host.sh` for the Linux orchestrator.
+Status: **functional prototype with kiosk-grade plumbing**. The orchestrator
+loop, error reporting, and Linux-host setup are fleshed out enough to run
+unattended in the field for a soak test, but a few items in
+"Before deploying to real users" below need to land before paying customers.
 
-Known issues:
+Recent hardening:
 
-- **Hardcoded VM names** (`Dirty-2`, `Clean-2`) and paths in `host.sh`.
+- `host.sh` is now config-driven (env vars at the top of the file) with
+  structured logging, wait-loop timeouts, clone-then-rename disk swap,
+  shared-folder snapshot history (rolling N=7 cycles), and Shutdown.exe
+  completion-sentinel checking.
+- `shutdown.cpp` and `boot.cpp` log per-entry success/failure to the
+  shared folder (`shutdown.log`, `boot.log`), surface SHFileOperation
+  return codes and aborted-state, and write completion sentinels that
+  the host can verify. Note: the C++ source has been edited but **not
+  recompiled** — this needs to happen on a Windows box with VS before
+  redeploy. If the colleague's developer hasn't rebuilt the binaries,
+  the deployed `.exe` files are still the old silent-failure versions.
+- `shutdown.cpp` was carrying a count-vs-dir_desc alignment bug (count
+  was incremented even on copy failure, leaving gaps that boot.cpp
+  couldn't detect); fixed.
+- `setup-host.sh` now locks down VT switching, Ctrl+Alt+Backspace,
+  Magic SysRq, and the VirtualBox host-key combo so an end-user can't
+  accidentally escape the fullscreen VM.
+
+Remaining engine-level known issues:
+
 - **Hardcoded shared-folder path** (`\\VBoxSvr\dest`) in both .cpp files.
 - **Hardcoded whitelist** in `pbosr/shutdown.cpp` `generate_whitelist()` —
   modifying the whitelist requires recompiling. The newer `ui/` codebase
   was meant to fix this.
-- **Filename-only copy-back** in `Boot/boot.cpp` — directory structure under
-  each whitelisted root is flattened on the way back. Acceptable for the
-  named user folders (Desktop, Documents, etc.) but loses subfolder
-  hierarchy inside them. Worth re-checking before relying on it.
-- The `boot_rework` branch was merged into master via PR #3 in the original
-  repo and is the version included here.
-- `host.sh` deletes the dirty VHD with no rollback. If `clonemedium` fails
-  partway the user loses everything. Add a rename-aside-then-delete-on-success
-  pattern before production use.
-- Builds against MSVC; the .sln only includes the `pbosr` project. `Boot`
-  has its own `.vcxproj` but is not in the .sln — open it separately or add
-  it to the solution.
+- **`MAX_PATH` truncation**: paths longer than 260 characters silently
+  truncate inside `SHFileOperation`. `shutdown.cpp` now logs a warning
+  when it sees one but doesn't fix the underlying behavior. Long-path
+  support requires switching to the `\\?\` prefix and the `*W` API
+  variants throughout.
+- **Locked files (Outlook .pst/.ost, etc.)**: SHFileOperation skips
+  files that are open with a deny-share-write lock. The new logging
+  surfaces the failure but doesn't fix the cause. A real fix needs
+  Volume Shadow Copy Service (VSS) integration — meaningful engineering.
+- **Builds against MSVC**: the .sln only includes the `pbosr` project.
+  `Boot` has its own `.vcxproj` but is not in the .sln — open it
+  separately or add it to the solution.
+
+PREVIOUSLY claimed and now retracted: "Boot/boot.cpp flattens directory
+structure under each whitelisted root". On a closer read this was wrong.
+`SHFileOperation` with `FO_COPY` recurses, and `boot.cpp` invokes it on
+each top-level entry of the transit dir, so subdirectory structure is
+preserved. Mentioning here so a future reader who sees the old claim in
+git history doesn't go chasing a phantom bug.
 
 ### `ui/osr_dotnet/` — WPF configurator
 
@@ -121,6 +148,107 @@ What is broken or missing:
   in the WPF event-handler model, but the chained helpers — `setUserDir`,
   `setWhitelist`, `finishUserInitialization` — could become `Task`-returning
   to give callers the option to await).
+
+## Before deploying to real users
+
+Engine plumbing is now solid enough to run unattended for soak testing.
+What remains, ordered by how badly it would hurt a real customer, is a
+mix of design-level issues and deployment-at-scale issues. Treat these
+as gating items for paid customers, not for a friendly soak deployment.
+
+### Design-level
+
+1. **Ransomware persistence by design.** The architecture preserves
+   user files across the OS reset; if a user's files get encrypted in
+   one shift, the next shift dutifully restores the encrypted versions.
+   The `host.sh` snapshot history (`~/osr-archive/<timestamp>/`, 7
+   shifts by default) gives an admin a manual rollback path, but does
+   not prevent the encryption from happening or from re-propagating
+   on the next cycle. Real fixes:
+   - Run an AV scan inside the Dirty VM as part of the shutdown
+     procedure, refuse to commit files to the shared folder if a
+     scanner flags them. Defender + a scheduled task that completes
+     before `Shutdown.exe` runs is a starting point.
+   - Or, accept that the snapshot history is the recovery story, and
+     give an admin a one-button "roll a user back to N shifts ago"
+     workflow.
+
+2. **No AV inside the Clean VM.** Even if Dirty-side AV catches stuff,
+   the Clean image is pulled forward forever and any malware that
+   landed in it once is permanent. Microsoft Defender by default plus
+   a scheduled clean-image update workflow is the minimum.
+
+3. **Customer data sits unencrypted on the Linux host filesystem**
+   (`~kiosk/dest/` and `~/osr-archive/`). For HIPAA-adjacent contexts
+   (nursing homes, healthcare clinics) this fails the obvious
+   compliance asks. Mitigations:
+   - LUKS full-disk encryption on the host install (the Ubuntu
+     installer offers this; not currently called out as required in
+     `engine/DEPLOYMENT.md`).
+   - Encrypt `~/osr-archive` with `gocryptfs` or `eCryptfs`.
+
+4. **Shared folder is bidirectional with full write access** between
+   the Dirty VM and the host. A compromised VM can stomp the host's
+   home directory or attempt VirtualBox-driver privilege escalation.
+   Mitigations: mount read-only on the host side except during the
+   brief copy-back window; or use a different transport (e.g., a
+   guest-side SMB share to a dedicated host volume).
+
+5. **No remote-support path.** When something breaks on a deployed
+   kiosk, the colleague's only option is to drive there. Add Tailscale
+   or WireGuard to `setup-host.sh` so the admin can SSH into the host
+   from anywhere.
+
+6. **Locked files (Outlook .pst, OneNote, etc.) skip silently.**
+   `shutdown.cpp` now logs the failure. To actually copy them needs
+   Volume Shadow Copy Service integration (`vssadmin create shadow`,
+   then copy from the shadow). Real engineering work.
+
+### Deployment-at-scale
+
+For a single-installer-on-many-machines scenario (one library,
+one nursing home), the current setup process is approximately
+2–3 hours per machine, on-site. This does not scale: a 20-machine
+deployment is a person-week.
+
+7. **Build a master-image clone workflow.** The realistic answer is:
+   set up one machine end-to-end, image its drive (Clonezilla or
+   `dd`), restore the image to each additional machine's drive,
+   then run a per-machine `finalize-machine.sh` first-boot script
+   that:
+   - regenerates SSH host keys
+   - regenerates `/etc/machine-id`
+   - sets a unique hostname (e.g. derived from MAC)
+   - re-runs `sysprep /generalize` inside the Clean VM and triggers
+     a fresh Windows OOBE / activation pass
+   - prompts the installer for Wi-Fi credentials and customer-specific
+     config (printer drivers, etc.)
+
+   None of this exists today. It is roughly 1–2 weeks of focused
+   work; it transforms 20-machine deploys from a person-week to a
+   person-day.
+
+8. **License model.** OEM Windows licenses are tied to the original
+   hardware; cloning a Sysprepped image to fresh hardware needs
+   either volume licensing (not generally available to small
+   customers) or a fresh retail/OEM license per Clean VM. At
+   ~$200/seat × N seats × M customers, this is real procurement
+   friction. Pick a position before the first customer.
+
+9. **Fleet-update story.** The Clean VHD ages; Windows Updates accumulate;
+   the clean image needs to be replaced periodically across the deployed
+   fleet. Right now: a person visits each site. A realistic answer:
+   the host pulls a signed VHD from a central server during off-hours,
+   verifies the signature, and queues it for the next swap. Engineering
+   work, not yet started.
+
+10. **Diagnostics over the phone.** When a non-technical customer calls
+    saying "it's broken," there is currently no way to send logs back.
+    `host.sh` writes to `~/osr-host.log`; `shutdown.cpp` and `boot.cpp`
+    write to `\\VBoxSvr\dest\*.log`; nothing aggregates these or
+    surfaces them remotely. Pair with #5 (Tailscale) and a daily
+    `journalctl --until=24h ago | curl …` upload to a central
+    collector.
 
 ### Files NOT included from the original prototypes
 
