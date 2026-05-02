@@ -1,0 +1,18 @@
+﻿<Page x:Class="osr_dotnet.Views.Login"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:osr_dotnet.Views"
+        mc:Ignorable="d"
+        Title="Operating System Refresh" Height="450" Width="800">
+    <Grid>
+        <PasswordBox HorizontalAlignment="Left" Name="password_box" Margin="337,170,0,0" VerticalAlignment="Top" Width="126" Height="25"/>
+        <Label Content="Password:" HorizontalAlignment="Left" Height="30" Margin="257,170,0,0" FontWeight="Bold" VerticalAlignment="Top" Width="80" RenderTransformOrigin="0.838,1.7"/>
+        <Label Content="Email:" HorizontalAlignment="Left" Height="30" Margin="257,140,0,0" FontWeight="Bold" VerticalAlignment="Top" Width="80" RenderTransformOrigin="0.838,1.7"/>
+        <TextBox HorizontalAlignment="Left" Name="email_box" Height="25" Margin="337,140,0,0" TextWrapping="Wrap" Text="" VerticalAlignment="Top" Width="126"/>
+        <Button Content="Create new Account" HorizontalAlignment="Left" Height="27" Margin="337,253,0,0" VerticalAlignment="Top" Width="126" Click="Switch_Create"/>
+        <Button Content="Login" HorizontalAlignment="Left" Margin="337,221,0,0" VerticalAlignment="Top" Width="126" Height="27" Click="Login_Click"/>
+
+    </Grid>
+</Page>

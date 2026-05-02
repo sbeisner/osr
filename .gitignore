@@ -1,0 +1,47 @@
+# Build artifacts
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Bb]uild/
+
+# Visual Studio cache
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# NuGet
+packages/
+*.nupkg
+*.snupkg
+
+# Build logs / intermediates
+*.tlog
+*.pdb
+*.idb
+*.ipdb
+*.iobj
+*.obj
+*.o
+*.lastbuildstate
+*.log
+*.aps
+
+# C++ build output
+*.exe
+*.dll
+*.exp
+*.lib
+*.ilk
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+*.swp
+
+# Local config (must NOT contain real Cosmos credentials before commit)
+**/App.Local.config

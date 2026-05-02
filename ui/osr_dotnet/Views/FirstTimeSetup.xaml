@@ -1,0 +1,18 @@
+﻿<Page x:Class="osr_dotnet.Views.FirstTimeSetup"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+      xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+      xmlns:local="clr-namespace:osr_dotnet.Views"
+      mc:Ignorable="d" 
+      d:DesignHeight="450" d:DesignWidth="800"
+      Title="FirstTimeSetup">
+
+    <Grid>
+        <ListBox HorizontalAlignment="Left" Name="listBox" Height="280" Margin="29,44,0,0" VerticalAlignment="Top" Width="594" SelectionChanged="ListBox_SelectionChanged"/>
+        <Button Content="Continue" HorizontalAlignment="Left" Height="22" Margin="497,329,0,0" VerticalAlignment="Top" Width="126" Click="Save_Whitelist"/>
+        <Label Content="Configure Whitelist" HorizontalAlignment="Left" Height="23" Margin="29,16,0,0" VerticalAlignment="Top" Width="291"/>
+        <Button Content="Browse" HorizontalAlignment="Left" Height="22" Margin="381,329,0,0" VerticalAlignment="Top" Width="111" Click="Button_Click"/>
+
+    </Grid>
+</Page>
