@@ -115,9 +115,12 @@ namespace osr_dotnet.Views
             await userStore.UpdateUser(activeUser);
         }
 
-        public void initZip()
+        public async Task initZip()
         {
-            fileSystemController.createZipArchive();
+            if (fileSystemController != null)
+            {
+                await fileSystemController.createZipArchive();
+            }
         }
     }
 }

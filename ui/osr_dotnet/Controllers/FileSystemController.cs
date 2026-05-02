@@ -43,93 +43,74 @@ namespace osr_dotnet.Controllers
             
         }
 
-        public async void createZipArchive()
+        public async Task createZipArchive()
         {
-            string zipName = "clean" + window.getActiveUser().Id;
-            string startPath = "C:\\";
-            string zipPath = OSR_DIR + "\\" + zipName + ".zip";
-            await zipHelper(startPath, zipPath, CompressionLevel.Fastest, true, Encoding.UTF8);
-        }
+            var user = window?.getActiveUser();
+            if (user == null)
+            {
+                Console.WriteLine("createZipArchive: no active user");
+                return;
+            }
+            if (string.IsNullOrWhiteSpace(user.Whitelist))
+            {
+                Console.WriteLine("createZipArchive: whitelist is empty; nothing to archive");
+                return;
+            }
 
-        public async Task zipHelper(
-            string sourceDir,
-            string destArchiveName,
-            CompressionLevel level,
-            bool includeBaseDirectory,
-            Encoding entryNameEncoding)
-        {
-            if (string.IsNullOrEmpty(sourceDir))
+            string zipPath = Path.Combine(OSR_DIR, "snapshot-" + user.Id + ".zip");
+            if (File.Exists(zipPath))
             {
-                throw new ArgumentNullException("sourceDirectoryName");
+                File.Delete(zipPath);
             }
-            if (string.IsNullOrEmpty(destArchiveName))
+
+            var roots = user.Whitelist
+                .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(p => p.Trim())
+                .Where(p => !string.IsNullOrEmpty(p))
+                .ToList();
+
+            using (ZipArchive zip = ZipFile.Open(zipPath, ZipArchiveMode.Create))
             {
-                throw new ArgumentNullException("desinationArchiveFileName");
-            }
-            List<string> filesList = await GetFiles(sourceDir);
-            Console.WriteLine("\nFinished fetching files. Beginning image\n");
-            string zipName = OSR_DIR + "\\"  + "clean" + window.getActiveUser().Id + ".zip";
-            if (File.Exists(zipName))
-            {
-                using (ZipArchive newFile = ZipFile.Open(zipName, ZipArchiveMode.Update))
+                foreach (string root in roots)
                 {
-                    foreach (string file in filesList)
+                    string rootName = Path.GetFileName(root.TrimEnd('\\', '/'));
+                    if (string.IsNullOrEmpty(rootName)) rootName = "root";
+
+                    if (File.Exists(root))
                     {
-                        Console.WriteLine("Trying to write " + file + " to  image...\n");
-                        try
-                        {
-                            
-                            newFile.CreateEntryFromFile(file, System.IO.Path.GetFileName(file));
-                        }
-                        catch(Exception e)
-                        {
-                            Console.WriteLine(e.Message);
-                            Console.WriteLine("Failed to write {0} to image", file);
-                        }
+                        AddEntry(zip, root, rootName);
+                        continue;
+                    }
+                    if (!Directory.Exists(root))
+                    {
+                        Console.WriteLine("Whitelist entry not found, skipping: {0}", root);
+                        continue;
+                    }
+
+                    List<string> files = await GetFiles(root);
+                    foreach (string file in files)
+                    {
+                        string remainder = file.Substring(root.Length).TrimStart('\\', '/');
+                        string entryName = string.IsNullOrEmpty(remainder)
+                            ? rootName
+                            : rootName + "\\" + remainder;
+                        AddEntry(zip, file, entryName);
                     }
                 }
             }
-            else
-            {
-                using (ZipArchive newFile = ZipFile.Open(zipName, ZipArchiveMode.Create))
-                {
-                    foreach (string file in filesList)
-                    {
-                        Console.WriteLine("Trying to write " + file + " to  image...");
-                        try
-                        {
-                            newFile.CreateEntryFromFile(file, System.IO.Path.GetFileName(file));
-                        }
-                        catch (Exception e)
-                        {
-                            Console.WriteLine(e.Message);
-                            Console.WriteLine("Failed to write {0} to image", file);
-                        }
-
-                    }
-                }
-            }
+            Console.WriteLine("Wrote archive to {0}", zipPath);
         }
 
-        private string[] GetEntryNames(string[] names, string sourceFolder, bool includeBaseName)
+        private static void AddEntry(ZipArchive zip, string sourceFile, string entryName)
         {
-            if (names == null || names.Length == 0)
-                return new string[0];
-
-            if (includeBaseName)
-                sourceFolder = Path.GetDirectoryName(sourceFolder);
-
-            int length = string.IsNullOrEmpty(sourceFolder) ? 0 : sourceFolder.Length;
-            if (length > 0 && sourceFolder != null && sourceFolder[length - 1] != Path.DirectorySeparatorChar && sourceFolder[length - 1] != Path.AltDirectorySeparatorChar)
-                length++;
-
-            var result = new string[names.Length];
-            for (int i = 0; i < names.Length; i++)
+            try
             {
-                result[i] = names[i].Substring(length);
+                zip.CreateEntryFromFile(sourceFile, entryName, CompressionLevel.Fastest);
             }
-
-            return result;
+            catch (Exception e)
+            {
+                Console.WriteLine("Skipped {0}: {1}", sourceFile, e.Message);
+            }
         }
 
         private async Task<List<string>> GetFiles(string sourceDir)

@@ -51,7 +51,7 @@ namespace osr_dotnet.Views
             }
         }
 
-        private void Save_Whitelist(object sender, RoutedEventArgs e)
+        private async void Save_Whitelist(object sender, RoutedEventArgs e)
         {
             savedDirs.ForEach(delegate (string dir)
             {
@@ -59,7 +59,7 @@ namespace osr_dotnet.Views
             });
             window.setWhitelist(whitelist);
             window.finishUserInitialization();
-            window.initZip();
+            await window.initZip();
         }
     }
 }
