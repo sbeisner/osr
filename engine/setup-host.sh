@@ -172,6 +172,55 @@ EOF
 dconf update
 
 # ---------------------------------------------------------------------------
+# 9. Kiosk lockdown — prevent end-users from escaping the VM
+# ---------------------------------------------------------------------------
+echo "[*] Disabling VT switching, Ctrl+Alt+Backspace, and Magic SysRq"
+
+# Xorg: DontVTSwitch blocks Ctrl+Alt+F1..F12 (the chord that drops to a
+# console). DontZap blocks Ctrl+Alt+Backspace (which kills the X server).
+# Both are accessible from inside a fullscreen VirtualBox window because
+# Xorg processes them before VirtualBox sees them.
+mkdir -p /etc/X11/xorg.conf.d
+cat > /etc/X11/xorg.conf.d/10-osr-kiosk.conf <<'EOF'
+Section "ServerFlags"
+    Option "DontVTSwitch" "true"
+    Option "DontZap"      "true"
+EndSection
+EOF
+
+# Kernel: the SysRq key (Alt+PrtSc + various second keys) can sync,
+# remount, kill processes, or trigger a reboot. Disable for kiosk.
+cat > /etc/sysctl.d/60-osr-kiosk.conf <<'EOF'
+# Disable Magic SysRq combos on kiosk machines (default in many distros
+# but explicit here so future package updates can't re-enable it).
+kernel.sysrq = 0
+EOF
+sysctl --system >/dev/null
+
+# VirtualBox: the "host key" (default Right-Ctrl) is what lets a VM user
+# leave fullscreen, switch to seamless mode, or send Ctrl+Alt+Del. Set it
+# to a key that physically does not exist on standard keyboards so the
+# end-user cannot escape the VM by accident or otherwise.
+echo "[*] Neutralizing the VirtualBox host-key combo for $KIOSK_USER"
+sudo -u "$KIOSK_USER" mkdir -p "$KIOSK_HOME/.config/VirtualBox"
+# "0" disables the combo entirely. Run as the kiosk user so the setting
+# lands in their per-user VirtualBox.xml.
+if ! sudo -u "$KIOSK_USER" VBoxManage setextradata global GUI/Input/HostKeyCombination "0" 2>/dev/null; then
+    echo "[warn] could not set VirtualBox host key now (run once as kiosk:"
+    echo "       sudo -u $KIOSK_USER VBoxManage setextradata global GUI/Input/HostKeyCombination 0"
+fi
+
+# Hide the GNOME login user list (auto-login is enabled, but defense in
+# depth — if auto-login fails, the kiosk user shouldn't be selectable).
+cat >> /etc/dconf/db/local.d/00-osr-kiosk <<'EOF'
+
+[org/gnome/login-screen]
+disable-user-list=true
+EOF
+echo '/org/gnome/login-screen/disable-user-list' >> /etc/dconf/db/local.d/locks/00-osr-kiosk
+dconf update
+
+# ---------------------------------------------------------------------------
 # Done
 # ---------------------------------------------------------------------------
 cat <<'EOF'
