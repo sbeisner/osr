@@ -47,6 +47,17 @@ the host.
 4. Next user logs in to a freshly-cloned dirty VM with their files restored
    to their previous locations.
 
+## Deploying this on a real host machine
+
+For end-to-end host setup — picking a Linux distro, installing VirtualBox,
+creating the VMs, configuring auto-login and fullscreen autostart, recovery
+procedures — see **[DEPLOYMENT.md](DEPLOYMENT.md)**. The `setup-host.sh`
+script next to this file automates most of the Linux-side work; the manual
+steps are walked through in DEPLOYMENT.
+
+The build instructions below are for the Windows-side binaries that go
+inside the VMs.
+
 ## Build
 
 ### Windows-side modules (`pbosr/`, `Boot/`)

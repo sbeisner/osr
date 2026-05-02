@@ -13,15 +13,26 @@ the same machines are used by the same handful of users every day.
 
 ```
 osr/
-├── engine/   Working VirtualBox-based "swap a clean VHD over the dirty one
-│             on shutdown" implementation. C++ + a Linux host orchestrator.
-│             This is the only end-to-end working version.
-└── ui/       WPF configurator/account UI written for a later, more ambitious
-              version of the product. Builds; partially functional. See
-              ui/README.md for current state and missing pieces.
+├── engine/         Working VirtualBox-based "swap a clean VHD over the
+│                   dirty one on shutdown" implementation. C++ + a Linux
+│                   host orchestrator + a one-shot host-setup script.
+│                   This is the only end-to-end working version.
+├── ui/             WPF configurator/account UI written for a later, more
+│                   ambitious version of the product. Builds and runs
+│                   locally; partially functional. See ui/README.md.
+└── docs/           Architecture decisions and rationale documents,
+                    e.g. why the WindowsPE approach was rejected.
 ```
 
-`HANDOFF.md` is the honest accounting for the next maintainer.
+The single most important entry points for the next maintainer:
+
+- **`engine/DEPLOYMENT.md`** — step-by-step guide to turning a fresh
+  Linux PC into a deployed kiosk. Linux distro choice, VirtualBox
+  setup, VM creation, fullscreen autostart, recovery procedures.
+- **`HANDOFF.md`** — honest accounting of the codebase state, what
+  works, what's stubbed, suggested next steps.
+- **`docs/why-not-winpe.md`** — detailed reasoning for the
+  architectural choice of VirtualBox over WindowsPE imaging.
 
 ## What works today
 
@@ -45,7 +56,10 @@ of the concept. The pattern is:
    into place, then powers off so the next user gets a clean login.
 
 This was the prototype that demonstrated the concept worked. It is functional
-but rough. See `engine/` for build instructions.
+but rough. See `engine/README.md` for build instructions and
+`engine/DEPLOYMENT.md` for the full end-to-end host setup procedure
+(`setup-host.sh` automates the Linux side; manual steps cover VM creation
+and Windows install).
 
 ## What does not work today
 
@@ -86,9 +100,13 @@ have to be re-litigated:
 - **libssh transport** (`proactive_backup`): worked, but introduced a network
   hop and credential management for a problem that's local to the machine.
   Replaced by `\\VBoxSvr` shared folders.
-- **Booting into WindowsPE on shutdown to image partitions**: discussed but
-  never built. Equivalent to what Faronics Deep Freeze and Windows Unified
-  Write Filter (UWF) already provide off-the-shelf — see `HANDOFF.md`.
+- **Booting into WindowsPE on shutdown to image-replace the system
+  partition**: prototyped and rejected. Microsoft's monthly patch cadence
+  and feature-update churn make image-replace approaches a dedicated-team
+  problem; the VirtualBox abstraction insulates the host from anything
+  Microsoft does inside the VM. See `docs/why-not-winpe.md` for the full
+  rationale. Faronics Deep Freeze and Windows UWF are off-the-shelf
+  alternatives if the customer's licensing budget allows.
 - **ASP.NET Core + Angular UI** (`filesystem_refresh`): wrong shape for a
   per-machine local-control-panel app. WPF replaced it.
 

@@ -73,46 +73,54 @@ What works:
 
 - Project compiles under Visual Studio 2019+ targeting .NET Framework 4.7.2,
   after a NuGet restore.
-- Page navigation through Login → AccountCreate → SelectUser → FirstTimeSetup.
+- Page navigation: `Login` → (returning user) `Configure`,
+  (new user) `AccountCreate` → `SelectUser` → `FirstTimeSetup` → `Configure`.
 - `LocalUserStore` persists users to `%LOCALAPPDATA%\osr\users.json`
   (atomic write via temp-then-rename).
 - Login fails closed with a `MessageBox` if no matching user is found
   (the original code dereferenced a null user, NRE-ing on first attempt).
-- `FileSystemController.createZipArchive()` recursively zips a configured
-  source directory into `C:\Program Files\osr_refresh\clean<userId>.zip`.
+- `User.Id` is a fresh `Guid.NewGuid()` per account (was `Random.Next()`).
+- `FileSystemController.createZipArchive()` reads `User.Whitelist`,
+  splits on newlines, and recursively archives each entry to
+  `%LOCALAPPDATA%\osr\snapshot-<userId>.zip`. Preserves directory
+  structure within each whitelist root via `<rootName>\<remainder>`
+  entry names; permission-denied files are logged and skipped. Returns
+  `Task` so callers can `await` it (was `async void`).
+- `Configure.xaml`'s two buttons are wired: **Update Whitelist**
+  navigates back to `FirstTimeSetup`; **Run Update** awaits a fresh
+  snapshot and reports completion via `MessageBox`.
 - `SelectUser.xaml.cs` enumerates Windows local accounts via WMI
   (`Win32_UserAccount`).
 
 What is broken or missing:
 
-- **`DiscUtilsController` is a stub.** The whole point of pulling in the
-  `DiscUtils` NuGet package was to build clean ISO images; only the
-  CDBuilder constructor is wired up. No file enumeration, no ISO write.
-- **`Configure.xaml.cs`** is empty (default constructor only). The two
-  buttons in `Configure.xaml` ("Update Whitelist", "Run Update") are not
-  wired to anything.
+- **`DiscUtilsController` is a stub.** The `DiscUtils` NuGet dependency
+  was pulled in for building clean ISO images — the eventual idea being
+  that OSR could deploy on bare metal without VirtualBox. Only the
+  `CDBuilder` constructor is wired; no file enumeration, no ISO write.
+  *Read `docs/why-not-winpe.md` before pursuing this — the same
+  Microsoft-patch-cadence problems that killed the WindowsPE-imaging
+  approach apply here, and DiscUtils-built ISOs hit them too.*
 - **Plaintext password storage** in `LocalUserStore`. Hash on create + on
   lookup before any real-user deployment. Marked `TODO(handoff)` in
   `LocalUserStore.QueryUsersAsync`.
-- **Random user IDs** (`new Random().Next(2147483647)` in
-  `AccountCreate.Save_Account_To_DB`). Use `Guid.NewGuid()` instead.
-- **Hard-coded path** `C:\Program Files\osr_refresh` in
-  `FileSystemController.OSR_DIR`. Move to `App.config` or
-  `Environment.SpecialFolder.LocalApplicationData`.
 - **The UI is not wired to `engine/`.** Today the WPF app and the C++
-  shutdown/boot binaries are independent; the WPF "Run Update" button in
-  `Configure.xaml` was the intended hook. Wiring this is the most useful
-  next integration step.
-- **`Microsoft.WindowsAPICodePack`** dependency may be hard to restore from
-  modern NuGet feeds; the official package was unlisted years ago. There
-  are community-maintained forks; you may need to point your local feed at
-  one of those.
+  shutdown/boot binaries are independent; the WPF "Run Update" button
+  produces a local zip, while the engine's `\\VBoxSvr\dest` shared-folder
+  workflow is its own thing. Decide what role the UI plays before
+  wiring them together.
+- **`Microsoft.WindowsAPICodePack`** dependency may be hard to restore
+  from modern NuGet feeds; the official package was unlisted years ago.
+  Community-maintained forks exist.
 - **`RhinoCommon` is in `packages.config` and `osr_dotnet.csproj`.** It is
   not used by any code in the project — it appears to have been added by
   accident. It can be removed; left in to minimize churn during handoff.
 - No tests, no input validation on the AccountCreate form beyond
   empty-field and password-match checks.
-- `async void` in event handlers swallows exceptions silently.
+- `async void` in event handlers swallows exceptions silently (deliberate
+  in the WPF event-handler model, but the chained helpers — `setUserDir`,
+  `setWhitelist`, `finishUserInitialization` — could become `Task`-returning
+  to give callers the option to await).
 
 ### Files NOT included from the original prototypes
 
@@ -139,7 +147,9 @@ What is broken or missing:
    - **Folder redirection + FSLogix profile containers** to a small NAS,
      making the system disk genuinely disposable.
    The strongest case for continuing this project is if there is a feature
-   or price point those tools don't hit.
+   or price point those tools don't hit. Read `docs/why-not-winpe.md` —
+   most of its argument applies just as forcefully to the question of
+   whether to keep building OSR at all.
 
 2. **Wire the UI to the engine.** The two halves currently know nothing
    about each other. The most natural integration: the WPF
@@ -148,20 +158,28 @@ What is broken or missing:
    `FirstTimeSetup` already produces something close to that whitelist
    shape; it just doesn't write it where the engine looks.
 
-3. **Finish `DiscUtilsController`.** This was the architectural improvement
-   over the VBox-swap approach and is the missing piece that would let the
-   product run on bare metal instead of inside a guest VM.
-
-4. **Address the hashing / random-ID issues** before any field deployment.
+3. **Address the password-hashing issue** before any field deployment.
    `LocalUserStore.QueryUsersAsync` carries a `TODO(handoff)` to that
-   effect; `AccountCreate` should switch to `Guid.NewGuid()` for `User.Id`.
+   effect.
 
-5. **Replace hardcoded paths and VM names** with config-driven values
-   (the C++ side has hardcoded `\\VBoxSvr\dest`, `Dirty-2` and `Clean-2`
-   throughout; the C# side has hardcoded `C:\Program Files\osr_refresh`).
+4. **Replace hardcoded VM names and shared-folder paths** with
+   config-driven values (the C++ side has hardcoded `\\VBoxSvr\dest`,
+   `Dirty-2` and `Clean-2` throughout; pulling these into env vars or a
+   small config file is a one-evening job and lets the engine ship to
+   multiple customers).
+
+5. **Tighten `host.sh`'s disk swap** to clone-then-rename rather than
+   delete-then-clone (see `engine/DEPLOYMENT.md` known limitations).
 
 6. **Prune unused dependencies.** `RhinoCommon` is referenced but not
    used; removing it would shrink the package restore noticeably.
+
+7. **Resist the temptation to revisit WindowsPE-style imaging.** It will
+   feel like the obvious next architectural improvement — bare metal,
+   no VirtualBox layer, native performance. `docs/why-not-winpe.md`
+   walks through why it was prototyped and rejected, with specific
+   attention to the maintenance burden of tracking Microsoft's monthly
+   patch cadence and feature updates.
 
 ## Original product context
 
