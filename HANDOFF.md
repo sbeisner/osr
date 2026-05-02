@@ -145,9 +145,9 @@ What is broken or missing:
 - **`Microsoft.WindowsAPICodePack`** dependency may be hard to restore
   from modern NuGet feeds; the official package was unlisted years ago.
   Community-maintained forks exist.
-- **`RhinoCommon` is in `packages.config` and `osr_dotnet.csproj`.** It is
-  not used by any code in the project — it appears to have been added by
-  accident. It can be removed; left in to minimize churn during handoff.
+- (Removed: `RhinoCommon` and `Eto` were dragged into `packages.config`
+  and the .csproj years ago, never used by any code, and broke the build
+  for anyone who couldn't restore the package. Cleaned out.)
 - No tests, no input validation on the AccountCreate form beyond
   empty-field and password-match checks.
 - `async void` in event handlers swallows exceptions silently (deliberate
@@ -298,10 +298,7 @@ deployment is a person-week.
    command-line args before shipping to a second customer. (`host.sh`
    on the Linux side is already env-driven; the C++ binaries are not.)
 
-4. **Prune unused dependencies.** `RhinoCommon` is referenced but not
-   used; removing it would shrink the package restore noticeably.
-
-5. **Resist the temptation to revisit WindowsPE-style imaging.** It will
+4. **Resist the temptation to revisit WindowsPE-style imaging.** It will
    feel like the obvious next architectural improvement — bare metal,
    no VirtualBox layer, native performance. `docs/why-not-winpe.md`
    walks through why it was prototyped and rejected, with specific
