@@ -33,6 +33,9 @@ The single most important entry points for the next maintainer:
   works, what's stubbed, suggested next steps.
 - **`docs/why-not-winpe.md`** — detailed reasoning for the
   architectural choice of VirtualBox over WindowsPE imaging.
+- **`docs/ransomware-defense.md`** — threat model, defense-in-depth
+  strategy, what's implemented, and what's deferred. Read this before
+  any conversation with a customer about whether OSR "stops ransomware."
 
 ## What works today
 

@@ -177,17 +177,69 @@ fresh clone of this VM's disk.
     do not want updates fighting the OSR cycle during the demo period.
 11. Install the customer's software stack: Office, QuickBooks, Outlook,
     whatever they use. Configure it.
-12. Copy `Boot.exe` from the USB stick to `C:\osr\Boot.exe`.
-13. Wire it to run automatically on the *clean* boot (the one where
-    Boot.exe restores files and shuts down). The cleanest way is a
-    Scheduled Task at user-logon for the operator account, running
-    `C:\osr\Boot.exe` with highest privileges.
-14. **Crucially: do not run Boot.exe inside Clean-2 yet.** It will try to
+12. **Configure ransomware protection.** Microsoft Defender's Controlled
+    Folder Access (CFA) is the highest-leverage thing you can turn on
+    inside the Clean image. It blocks unauthorized apps from writing to
+    user data folders, which defeats most commodity ransomware before
+    encryption can land. Because CFA's policy is part of the Clean image,
+    it's restored to a known-good state on every cycle — a Dirty-side
+    compromise can't permanently disable it. Open an admin PowerShell:
+
+    ```powershell
+    # Turn on Controlled Folder Access
+    Set-MpPreference -EnableControlledFolderAccess Enabled
+
+    # Add the user data paths from the OSR whitelist as protected folders
+    $u = "C:\Users\staff"   # change to whatever operator name you used
+    Add-MpPreference -ControlledFolderAccessProtectedFolders @(
+        "$u\Desktop",
+        "$u\Documents",
+        "$u\Pictures",
+        "$u\Music",
+        "$u\Videos",
+        "$u\AppData\Roaming\Microsoft\Signatures",
+        "$u\AppData\Roaming\Microsoft\UProof",
+        "C:\Users\Public\Documents\Intuit\QuickBooks"
+    )
+
+    # Allow the legitimate apps the customer uses to write to those folders.
+    # Without this, Word/Excel/QuickBooks can't save files. Add or remove
+    # to match the customer's actual stack.
+    Add-MpPreference -ControlledFolderAccessAllowedApplications @(
+        "C:\Program Files\Microsoft Office\root\Office16\WINWORD.EXE",
+        "C:\Program Files\Microsoft Office\root\Office16\EXCEL.EXE",
+        "C:\Program Files\Microsoft Office\root\Office16\OUTLOOK.EXE",
+        "C:\Program Files\Microsoft Office\root\Office16\POWERPNT.EXE"
+    )
+
+    # Verify
+    Get-MpPreference | Select-Object EnableControlledFolderAccess, `
+        ControlledFolderAccessProtectedFolders, `
+        ControlledFolderAccessAllowedApplications
+    ```
+
+    Also confirm that **cloud-delivered protection** and **automatic
+    sample submission** are on (Settings → Update & Security → Windows
+    Security → Virus & threat protection → Manage settings). These
+    update Defender's definitions during each Dirty session, which is
+    important since the Clean image is otherwise frozen.
+
+    See `../docs/ransomware-defense.md` for the full threat model and
+    why this is the highest-priority preventive measure.
+13. Copy `Boot.exe` from the USB stick to `C:\osr\Boot.exe`.
+14. Wire `Boot.exe` to run automatically on the *clean* boot (the one
+    where Boot.exe restores files and shuts down). The cleanest way is
+    a Scheduled Task at user-logon for the operator account, running
+    `C:\osr\Boot.exe` with highest privileges. Note: if CFA is on,
+    you may need to add `C:\osr\Boot.exe` to
+    `ControlledFolderAccessAllowedApplications` so it can write to the
+    user data folders during restore.
+15. **Crucially: do not run Boot.exe inside Clean-2 yet.** It will try to
     read `\\VBoxSvr\dest\dir_desc.txt` — there isn't one — and exit. That's
     fine; it just means there's nothing to restore. Leave it wired up.
-15. Shut Windows down cleanly: Start → Power → Shut down. Wait for the VM
+16. Shut Windows down cleanly: Start → Power → Shut down. Wait for the VM
     to power off in VirtualBox.
-16. Right-click Clean-2 in the VirtualBox manager → **Snapshots → Take
+17. Right-click Clean-2 in the VirtualBox manager → **Snapshots → Take
     Snapshot → name it "pristine"**. This is your rollback point if you
     ever need to redo the install.
 

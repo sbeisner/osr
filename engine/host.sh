@@ -3,11 +3,17 @@
 #
 # Sequence:
 #   1. Start the dirty VM, wait for the user's session to power off.
-#   2. Start the clean VM (which auto-runs Boot.exe to restore the user's
+#   2. Scan the shared folder for ransomware indicators (extension
+#      blacklist, ransom-note filenames). If any hit, suppress the
+#      restore for this cycle so the next user gets a fresh empty state
+#      instead of an encrypted one. The dirty session's data is still
+#      archived (marked SUSPICIOUS) so an admin can recover legitimate
+#      files via Tailscale SSH.
+#   3. Start the clean VM (which auto-runs Boot.exe to restore the user's
 #      whitelisted files, then powers itself off).
-#   3. Atomically replace the dirty VHD with a fresh clone of the clean
+#   4. Atomically replace the dirty VHD with a fresh clone of the clean
 #      VHD (clone-then-rename, never delete-then-clone).
-#   4. Archive the shared-folder transit dir under ~/osr-archive so an
+#   5. Archive the shared-folder transit dir under ~/osr-archive so an
 #      admin can roll back if a user reports lost or corrupted files.
 #
 # kiosk-loop.sh wraps this in an infinite loop for deployed kiosks.
@@ -81,17 +87,108 @@ archive_dest() {
     log "Archiving $DEST_DIR -> $target"
     if mv "$DEST_DIR" "$target"; then
         mkdir -p "$DEST_DIR"
+        if [ "${SUSPICIOUS_SESSION:-0}" -eq 1 ]; then
+            touch "$target.SUSPICIOUS"
+            log "Marked archive as SUSPICIOUS: $target.SUSPICIOUS"
+        fi
     else
         log "WARN: failed to archive $DEST_DIR; falling back to rm -rf"
         rm -rf "${DEST_DIR:?}"/*
     fi
-    # Prune to ARCHIVE_KEEP most recent
+    # Prune to ARCHIVE_KEEP most recent. Filter the .SUSPICIOUS marker
+    # files so they're counted with their archive dir; we prune both.
     ls -1t "$ARCHIVE_DIR" 2>/dev/null \
+        | grep -v '\.SUSPICIOUS$' \
         | tail -n +"$((ARCHIVE_KEEP + 1))" \
         | while read -r old; do
             log "Pruning old archive: $old"
             rm -rf "${ARCHIVE_DIR:?}/$old"
+            rm -f "${ARCHIVE_DIR:?}/${old}.SUSPICIOUS"
         done
+}
+
+# Patterns of files commonly created by ransomware. Lists are not
+# exhaustive; cover most commodity families seen in the wild.
+# See docs/ransomware-defense.md for the full threat-model context.
+RANSOM_EXTENSIONS=(
+    ".locked" ".lock" ".encrypted" ".encrypt" ".enc"
+    ".crypt" ".crypted" ".crypto"
+    ".aes" ".rsa"
+    ".RYK" ".ryuk" ".ryk"
+    ".conti" ".lockbit" ".crylock" ".crinf" ".crjoker"
+    ".wncry" ".wcry" ".wnry" ".wnryt"
+    ".babuk" ".anatova" ".lokd" ".lockd"
+    ".nemty" ".sodin" ".sodinokibi"
+    ".pay" ".pays" ".paymst"
+    ".cerber" ".coverton" ".cryptolocker" ".cryptowall"
+    ".djvu" ".stop"
+    ".cuba" ".dharma" ".phobos" ".medusa" ".blackcat"
+)
+
+RANSOM_NOTE_PATTERNS=(
+    "HOW_TO_DECRYPT*"
+    "HOW_TO_RESTORE*"
+    "README_TO_DECRYPT*"
+    "DECRYPT_INSTRUCTIONS*"
+    "DECRYPTION_INSTRUCTIONS*"
+    "RECOVERY_INSTRUCTIONS*"
+    "RECOVERY_KEY*"
+    "FILES_ENCRYPTED*"
+    "RESTORE_FILES*"
+    "!_INFO.txt"
+    "!_NOTICE.txt"
+    "!INSTRUCTI0NS!*"
+    "!README_DECRYPT*"
+    "_readme.txt"
+    "_open_.txt"
+    "RYUK*.txt"
+    "CONTI*.txt"
+    "LOCKBIT*.txt"
+)
+
+# scan_for_ransomware_signs <dir>
+# Returns 0 if clean, 1 if any indicator matched. Logs every hit and
+# (capped at 5 file paths per pattern) the actual matching files.
+scan_for_ransomware_signs() {
+    local dir=$1
+    local hits=0
+
+    if [ ! -d "$dir" ]; then
+        log "Ransomware scan: $dir does not exist; skipping"
+        return 0
+    fi
+
+    for ext in "${RANSOM_EXTENSIONS[@]}"; do
+        local count
+        count=$(find "$dir" -type f -iname "*${ext}" 2>/dev/null | wc -l | tr -d ' ')
+        if [ "${count:-0}" -gt 0 ]; then
+            log "RANSOMWARE_INDICATOR  extension '${ext}': $count file(s)"
+            find "$dir" -type f -iname "*${ext}" 2>/dev/null | head -5 | \
+                while read -r f; do log "    $f"; done
+            if [ "$count" -gt 5 ]; then
+                log "    ... and $((count - 5)) more"
+            fi
+            hits=$((hits + 1))
+        fi
+    done
+
+    for pat in "${RANSOM_NOTE_PATTERNS[@]}"; do
+        local matches
+        matches=$(find "$dir" -type f -iname "$pat" 2>/dev/null)
+        if [ -n "$matches" ]; then
+            log "RANSOMWARE_INDICATOR  ransom-note pattern '${pat}'"
+            echo "$matches" | head -5 | while read -r f; do log "    $f"; done
+            hits=$((hits + 1))
+        fi
+    done
+
+    if [ "$hits" -eq 0 ]; then
+        log "Ransomware scan: clean"
+    else
+        log "Ransomware scan: $hits indicator type(s) matched"
+    fi
+
+    [ "$hits" -eq 0 ]
 }
 
 mkdir -p "$(dirname "$LOG_FILE")"
@@ -116,7 +213,21 @@ else
     log "WARN: $SENTINEL missing — Shutdown.exe may not have completed"
 fi
 
-# 2. Clean VM — Boot.exe restores files, then shuts itself off
+# 2. Ransomware scan on the dirty session's data BEFORE the clean VM
+#    restores it. If indicators are found, suppress the restore by
+#    deleting dir_desc.txt — Boot.exe will then have nothing to copy
+#    back, and the next user gets a fresh clean Windows. The encrypted
+#    data is preserved in the archive (marked .SUSPICIOUS) so an admin
+#    can recover legitimate files via Tailscale SSH.
+SUSPICIOUS_SESSION=0
+if ! scan_for_ransomware_signs "$DEST_DIR"; then
+    SUSPICIOUS_SESSION=1
+    log "WARN: dirty session flagged SUSPICIOUS; suppressing restore for this cycle"
+    log "WARN: encrypted/suspicious files preserved in archive but NOT propagated"
+    rm -f "$DEST_DIR/dir_desc.txt"
+fi
+
+# 3. Clean VM — Boot.exe restores files, then shuts itself off
 log "Starting $CLEAN_VM"
 if ! VBoxManage startvm "$CLEAN_VM" >>"$LOG_FILE" 2>&1; then
     log "ERROR: could not start $CLEAN_VM; user files may be stranded in $DEST_DIR"
@@ -126,7 +237,7 @@ fi
 log "Waiting for $CLEAN_VM to power off"
 wait_for_vm_off "$CLEAN_VM"
 
-# 3. Replace dirty VHD with a fresh clone of the clean VHD.
+# 4. Replace dirty VHD with a fresh clone of the clean VHD.
 #    Clone first to a sibling .new file; only swap once that succeeds.
 #    This way a partial clone never leaves the user without a Dirty disk.
 log "Replacing dirty VHD via clone-then-rename"
@@ -175,7 +286,10 @@ if ! VBoxManage storageattach "$DIRTY_VM" \
     die "could not re-attach swapped $DIRTY_VHD; manual recovery needed"
 fi
 
-# 4. Archive the shared-folder transit dir for admin rollback
+# 5. Archive the shared-folder transit dir for admin rollback. If the
+#    session was flagged SUSPICIOUS earlier, archive_dest also drops a
+#    sibling .SUSPICIOUS marker file so admins can find the quarantined
+#    sessions.
 archive_dest
 
 log "=== cycle complete ==="
