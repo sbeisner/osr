@@ -200,10 +200,14 @@ as gating items for paid customers, not for a friendly soak deployment.
    brief copy-back window; or use a different transport (e.g., a
    guest-side SMB share to a dedicated host volume).
 
-5. **No remote-support path.** When something breaks on a deployed
-   kiosk, the colleague's only option is to drive there. Add Tailscale
-   or WireGuard to `setup-host.sh` so the admin can SSH into the host
-   from anywhere.
+5. **Remote-support path: partial.** `setup-host.sh` now installs
+   Tailscale and prompts the deployer to run `sudo tailscale up --ssh`
+   as a post-install step. The admin can `tailscale ssh
+   admin@<machine>` from anywhere afterward. Still missing: a daily
+   log roll-up (so a customer's "it's broken" call finds existing
+   diagnostics rather than requiring a live shell session), and a
+   policy decision about who in the Tailscale tailnet has SSH access
+   to which kiosks.
 
 6. **Locked files (Outlook .pst, OneNote, etc.) skip silently.**
    `shutdown.cpp` now logs the failure. To actually copy them needs

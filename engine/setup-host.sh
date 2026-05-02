@@ -20,8 +20,15 @@
 #   6. Drops engine/host.sh + engine/kiosk-loop.sh into /opt/osr/engine/
 #   7. Creates an autostart .desktop entry that launches kiosk-loop.sh on
 #      the kiosk user's graphical session
+#   8. Locks down VT switching, Ctrl+Alt+Backspace, the VBox host key,
+#      Magic SysRq, and the GDM user list so end-users can't escape the VM
+#   9. Installs Tailscale for remote admin access (does NOT authenticate;
+#      that needs `sudo tailscale up` interactively after this script)
 #
 # What you must do manually after this script:
+#   - Authenticate Tailscale: `sudo tailscale up --ssh` (browser flow).
+#     The --ssh flag enables Tailscale SSH so admins can shell in without
+#     managing per-machine SSH keys.
 #   - Create the Clean-2 VirtualBox VM, install Windows, install the
 #     OSR shutdown.exe and boot.exe binaries, set fullscreen as the
 #     default display mode, take an initial snapshot.
@@ -221,6 +228,28 @@ echo '/org/gnome/login-screen/disable-user-list' >> /etc/dconf/db/local.d/locks/
 dconf update
 
 # ---------------------------------------------------------------------------
+# 10. Tailscale — remote admin access for support
+# ---------------------------------------------------------------------------
+# Tailscale gives the admin a way to SSH into a deployed kiosk from anywhere
+# without exposing SSH to the public internet, opening firewall ports on the
+# customer's network, or managing per-machine SSH keys (when used with --ssh).
+# Without something like this, every "the computer's broken" call requires a
+# site visit.
+echo "[*] Installing Tailscale"
+if ! command -v tailscale >/dev/null 2>&1; then
+    # Tailscale's official installer adds their apt repo with a signed key
+    # and runs `apt-get install -y tailscale`. Trust chain is HTTPS-served
+    # from tailscale.com plus apt's own signing-key validation.
+    curl -fsSL https://tailscale.com/install.sh | sh
+else
+    echo "[ok] tailscale already installed"
+fi
+
+# We deliberately do NOT run `tailscale up` here — it requires either a
+# pre-issued auth key or an interactive browser flow, and silently waiting
+# on either is a poor UX inside a setup script. Operator runs it manually.
+
+# ---------------------------------------------------------------------------
 # Done
 # ---------------------------------------------------------------------------
 cat <<'EOF'
@@ -229,29 +258,38 @@ cat <<'EOF'
 
 Remaining manual steps (see engine/DEPLOYMENT.md for the full procedure):
 
-  1. Log in as the 'kiosk' user one time (Ctrl+Alt+F2, then back to F1)
+  1. Authenticate Tailscale (do this NOW before the kiosk lockdown
+     prevents you from getting back to a shell easily):
+
+         sudo tailscale up --ssh
+
+     A login URL prints; open it on any device, sign in with your
+     Tailscale account. The --ssh flag enables Tailscale SSH so future
+     admin access does not require managing SSH keys per host.
+
+  2. Log in as the 'kiosk' user one time (Ctrl+Alt+F2, then back to F1)
      or just complete this whole sequence as your admin user — both work.
 
-  2. Create the Clean-2 VirtualBox VM:
+  3. Create the Clean-2 VirtualBox VM:
         - Install Windows from your licensed ISO
         - Install Microsoft Edge updates, Office, QuickBooks, etc.
         - Build and copy the Boot.exe binary to C:\osr\Boot.exe and wire
           it as the post-login autorun (see DEPLOYMENT.md)
         - Take a snapshot named 'pristine'
 
-  3. Clone Clean-2 to Dirty-2 (right-click → Clone in VirtualBox manager;
+  4. Clone Clean-2 to Dirty-2 (right-click → Clone in VirtualBox manager;
      full clone, generate new MAC).
         - Build and copy Shutdown.exe to C:\osr\Shutdown.exe and wire it
           as a Group Policy shutdown script.
 
-  4. Configure the shared folder for both VMs: host path = ~kiosk/dest,
+  5. Configure the shared folder for both VMs: host path = ~kiosk/dest,
      mount name = dest, automount, make permanent.
 
-  5. Open the Dirty-2 VM once manually, switch the View to Full-screen
+  6. Open the Dirty-2 VM once manually, switch the View to Full-screen
      mode (Right-Ctrl + F), shut it down cleanly. VirtualBox saves the
      fullscreen preference.
 
-  6. Reboot the host. The kiosk user will auto-login and Dirty-2 will
+  7. Reboot the host. The kiosk user will auto-login and Dirty-2 will
      launch fullscreen.
 
 EOF

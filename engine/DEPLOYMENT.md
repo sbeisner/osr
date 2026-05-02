@@ -256,10 +256,11 @@ and the VirtualBox host-key combo so end-users can't escape the VM by
 accident. That same lockdown applies to you while the kiosk session is
 running. To get a maintenance shell:
 
-- **From the network** (preferred): SSH in as your admin user. This is
-  the only path that scales to many machines. Pair this with Tailscale
-  or WireGuard so the admin can reach the host from anywhere — see
-  HANDOFF.md "Before deploying to real users" for why this is gating.
+- **Over Tailscale SSH** (preferred): assuming you ran
+  `sudo tailscale up --ssh` at deploy time, you can `tailscale ssh
+  admin@<machine>` from anywhere your Tailscale account is signed in.
+  This is the path that scales to many machines and the only way to
+  troubleshoot a remote customer's machine without driving there.
 - **Physically present, no network**: reboot, hold `Shift` at the
   GRUB menu, pick "Advanced options for Ubuntu" → "recovery mode" →
   "root shell". The kiosk session isn't running yet, so VT switching
