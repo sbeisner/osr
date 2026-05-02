@@ -8,51 +8,113 @@ using namespace std;
 using convert_t = codecvt_utf8<wchar_t>;
 wstring_convert<convert_t, wchar_t> strconverter;
 
+// Shared-folder root mounted from the Linux host. All transit data and logs
+// live here so the host (and any admin) can see what happened on the
+// shutdown side.
+static const string SHARED = "\\\\VBoxSvr\\dest";
+static const string LOG_PATH = SHARED + "\\shutdown.log";
+
 void generate_whitelist();
 void parse_users();
 void parse_whitelist();
-bool SHCopy(LPCTSTR from, LPCTSTR to);
+bool SHCopy(LPCTSTR from, LPCTSTR to, int& errCode, bool& anyAborted);
 wstring to_wstring(string str);
+string current_timestamp();
+void log_line(const string& msg);
 
 int main() {
+	log_line("=== Shutdown.exe begin ===");
 	parse_users();
 	generate_whitelist();
 	parse_whitelist();
 
 	remove("users.txt");
 	remove("whitelist.txt");
-	ofstream complete_file("running_clean.txt");
-	
+
+	// Drop a sentinel the host can check after Dirty-2 powers off. host.sh
+	// logs a warning if this is missing, indicating Shutdown.exe did not
+	// run to completion (e.g. crashed, or Windows killed it past the
+	// shutdown-script grace period).
+	{
+		ofstream sentinel(SHARED + "\\shutdown-complete.flag");
+		if (sentinel.is_open()) {
+			sentinel << current_timestamp() << "\n";
+		}
+	}
+
+	log_line("=== Shutdown.exe complete; issuing system shutdown ===");
 	system("C:\\Windows\\System32\\shutdown.exe /s /t 0 /d p:0:0 /c \"Proactive Backup\"");
+}
+
+string current_timestamp() {
+	time_t t = time(nullptr);
+	char buf[32];
+	struct tm tmv;
+	localtime_s(&tmv, &t);
+	strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tmv);
+	return string(buf);
+}
+
+void log_line(const string& msg) {
+	// Append to the shared-folder log so the Linux host has visibility.
+	// Open/close per call so partial work survives a crash mid-run.
+	ofstream lf(LOG_PATH, ios::app);
+	if (lf.is_open()) {
+		lf << current_timestamp() << "  " << msg << "\n";
+	}
+	cout << msg << endl;
 }
 
 void parse_whitelist() {
 	string line;
-	string dir_prefix("\\\\VBoxSvr\\dest");
+	const string& dir_prefix = SHARED;
 	char sep = '\\';
 	ifstream in_file("whitelist.txt");
 	if (!in_file.is_open()) {
-		cerr << "Could not open whitelist" << endl;
+		log_line("ERROR: could not open whitelist.txt");
 		exit(1);
 	}
-	string user;
 	int count = 0;
-	ofstream dir_desc("\\\\VBoxSvr\\dest\\dir_desc.txt");
+	ofstream dir_desc(SHARED + "\\dir_desc.txt");
+	int failures = 0;
 	while (getline(in_file, line)) {
-		fs::path src_path(line);
-		string full_dir("");
-		string dest_path(to_string(count));
-		full_dir += dir_prefix + sep + dest_path;
-		
-		if (!SHCopy(to_wstring(line).c_str(), to_wstring(full_dir).c_str())) {
-			cerr << "Error copying from " << line << " to: " << full_dir << endl << endl;
+		if (line.empty()) {
 			continue;
 		}
-		cout << "Successful copy from " << line << " to " << full_dir << endl << endl;
+		// MAX_PATH is 260; SHFileOperation truncates beyond that. Surface
+		// it so an admin investigating "missing files" can see the cause.
+		if (line.length() >= MAX_PATH) {
+			log_line("WARN  path exceeds MAX_PATH and may be truncated: " + line);
+		}
+		string full_dir = dir_prefix + sep + to_string(count);
+
+		int errCode = 0;
+		bool aborted = false;
+		bool ok = SHCopy(to_wstring(line).c_str(),
+		                 to_wstring(full_dir).c_str(),
+		                 errCode, aborted);
+		if (!ok) {
+			ostringstream o;
+			o << "FAIL  copy " << line << " -> " << full_dir
+			  << "  errCode=0x" << hex << errCode
+			  << (aborted ? " (operation aborted partway)" : "");
+			log_line(o.str());
+			failures++;
+			// IMPORTANT: do NOT increment count on failure. dir_desc lines
+			// must correspond positionally to the numbered subfolders that
+			// Boot.exe will iterate. If we incremented on failure we'd
+			// leave gaps that Boot.exe couldn't detect.
+			continue;
+		}
+		log_line("OK    copy " + line + " -> " + full_dir);
 		dir_desc << line << endl;
 		count++;
 	}
 	dir_desc.close();
+	if (failures > 0) {
+		log_line("WARN  " + to_string(failures) + " whitelist entries failed to copy; "
+		         + "boot-side restore will skip them");
+	}
 }
 
 void generate_whitelist() {
@@ -106,10 +168,7 @@ void parse_users() {
 	}
 }
 
-bool SHCopy(LPCTSTR from, LPCTSTR to) {
-
-	cout << "Recursive file copy from " << from << " to " << to << endl;
-
+bool SHCopy(LPCTSTR from, LPCTSTR to, int& errCode, bool& anyAborted) {
 	SHFILEOPSTRUCT fileOp = { 0 };
 	fileOp.wFunc = FO_COPY;
 
@@ -123,18 +182,18 @@ bool SHCopy(LPCTSTR from, LPCTSTR to) {
 	newTo[_tcsclen(to) + 1] = NULL;
 	fileOp.pTo = newTo;
 
+	// FOF_NOERRORUI is intentional — kiosk machines have no human to
+	// dismiss a dialog box. Errors are surfaced via the return code and
+	// fAnyOperationsAborted instead of a popup.
 	fileOp.fFlags = FOF_SILENT | FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_NOCONFIRMMKDIR;
 
 	int result = SHFileOperation(&fileOp);
+	errCode = result;
+	anyAborted = (fileOp.fAnyOperationsAborted != FALSE);
 
-	cout << "SHFileOperation return code: 0x" << result << endl;
-
-	return result == 0;
+	return result == 0 && !anyAborted;
 }
 
 wstring to_wstring(string str) {
 	return strconverter.from_bytes(str);
 }
-
-
-
