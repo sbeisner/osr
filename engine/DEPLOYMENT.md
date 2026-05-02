@@ -301,6 +301,26 @@ Reboot the host. The kiosk user auto-logs-in, the autostart entry runs
 `kiosk-loop.sh`, which calls `host.sh` repeatedly. End-users see Windows
 fullscreen and never know there's a Linux underneath.
 
+### Diagnostics over the phone — `osr-status`
+
+When a customer calls saying "the computer's broken," the admin SSHes
+in via Tailscale and runs:
+
+```
+osr-status
+```
+
+It prints a one-page health summary: most recent cycle outcome, error
+and warning counts, any SUSPICIOUS-flagged sessions in the archive,
+VirtualBox VM states (including a warning if the Dirty VM is on a
+bridged adapter that exposes it to the customer's LAN), Tailscale
+status, disk usage, and reminders for things the host can't check
+(like Defender's Controlled Folder Access state inside the Clean VM).
+
+Read-only. Safe to run any time. The non-technical operator on-site
+can also run it and paste the output to support — no risk of breaking
+anything.
+
 ### Getting back to a Linux shell once the kiosk is locked down
 
 `setup-host.sh` deliberately disables `Ctrl+Alt+F1..F12` (TTY switching)
@@ -327,6 +347,35 @@ running. To get a maintenance shell:
 | Need to update Windows / install software | Power off the kiosk loop, snapshot Clean-2, do the work, retake snapshot |
 | Need to add a path to the whitelist       | Edit `engine/pbosr/shutdown.cpp`, rebuild, redeploy `Shutdown.exe` to Dirty-2 |
 | Need physical access to the host          | Ctrl+Alt+F2 → log in as admin                    |
+
+## Network configuration for the VMs
+
+Both the Clean and Dirty VMs **must** be on a NAT or NAT-Network
+adapter, not a bridged adapter. Bridged exposes the VM directly to
+the customer's LAN, which means a compromised Dirty session can scan
+and attack other devices on that LAN (printers, NAS, other staff
+workstations). NAT mode gives the user full outbound internet access
+(needed for browsing, email, Defender update lookups) while presenting
+the VM as a single host behind the Linux machine's IP.
+
+VirtualBox's default for new VMs is NAT, so this usually works out of
+the box. To verify on a deployed host:
+
+```
+osr-status
+```
+
+The "VirtualBox VMs" section explicitly flags `nic1=bridged` with a
+WARN line if it sees one. Fix via VBoxManage if needed:
+
+```
+VBoxManage modifyvm Dirty-2 --nic1 nat
+VBoxManage modifyvm Clean-2 --nic1 nat
+```
+
+For customers with multiple kiosks that need to see each other (rare —
+each machine is meant to be self-contained), use NAT-Network mode and
+configure a shared NAT-Network in VirtualBox. Do not use bridged.
 
 ## What's still missing for paid customers
 

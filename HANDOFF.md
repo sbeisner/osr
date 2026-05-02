@@ -206,14 +206,14 @@ as gating items for paid customers, not for a friendly soak deployment.
    brief copy-back window; or use a different transport (e.g., a
    guest-side SMB share to a dedicated host volume).
 
-5. **Remote-support path: partial.** `setup-host.sh` now installs
-   Tailscale and prompts the deployer to run `sudo tailscale up --ssh`
-   as a post-install step. The admin can `tailscale ssh
-   admin@<machine>` from anywhere afterward. Still missing: a daily
-   log roll-up (so a customer's "it's broken" call finds existing
-   diagnostics rather than requiring a live shell session), and a
-   policy decision about who in the Tailscale tailnet has SSH access
-   to which kiosks.
+5. **Remote-support path: in place.** `setup-host.sh` installs Tailscale
+   (deployer runs `sudo tailscale up --ssh` once) and an `osr-status`
+   command that prints a one-page health summary on demand. Admin
+   workflow on a "the computer's broken" call: `tailscale ssh
+   admin@<machine>` then `osr-status`. Still nice to have eventually:
+   a daily log roll-up to a central collector so an admin can see the
+   fleet without polling each host, and a policy decision about who
+   in the Tailscale tailnet has SSH access to which kiosks.
 
 6. **Locked files (Outlook .pst, OneNote, etc.) skip silently.**
    `shutdown.cpp` now logs the failure. To actually copy them needs

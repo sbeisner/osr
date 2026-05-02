@@ -129,6 +129,10 @@ mkdir -p "$ENGINE_DST"
 SRC_DIR="$(dirname "$(readlink -f "$0")")"
 install -m 0755 "$SRC_DIR/host.sh"        "$ENGINE_DST/host.sh"
 install -m 0755 "$SRC_DIR/kiosk-loop.sh"  "$ENGINE_DST/kiosk-loop.sh"
+install -m 0755 "$SRC_DIR/osr-status.sh"  "$ENGINE_DST/osr-status.sh"
+# Symlink so admins reaching the host via Tailscale SSH can just type
+# `osr-status` without remembering the install path.
+ln -sf "$ENGINE_DST/osr-status.sh" /usr/local/bin/osr-status
 
 # ---------------------------------------------------------------------------
 # 7. Autostart entry for the kiosk session
