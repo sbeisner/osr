@@ -13,14 +13,23 @@ static const string LOG_PATH = SHARED + "\\boot.log";
 
 void clean_up();
 void copy_back();
+void write_canaries();
 bool SHCopy(LPCTSTR from, LPCTSTR to, int& errCode, bool& anyAborted);
 wstring to_wstring(string str);
 string current_timestamp();
 void log_line(const string& msg);
 
+// Canary file contents. Shutdown.exe verifies that each whitelisted
+// directory still contains a file beginning with this exact line on the
+// next shutdown. Anything else (file missing, content changed, file
+// extension changed by ransomware) flags the session as suspicious.
+static const string CANARY_FILENAME = "osr-canary.txt";
+static const string CANARY_MAGIC = "OSR_CANARY_v1";
+
 int main() {
 	log_line("=== Boot.exe begin ===");
 	copy_back();
+	write_canaries();
 	clean_up();
 }
 
@@ -117,6 +126,47 @@ void copy_back() {
 			sentinel << current_timestamp() << "\n";
 		}
 	}
+}
+
+// Drop a canary file into each whitelisted directory after restore. The
+// next Shutdown.exe verifies these are still intact; any tampering suggests
+// ransomware. We re-read dir_desc.txt rather than passing state from
+// copy_back() to keep the change surgical. clean_up() will remove
+// dir_desc.txt afterward.
+void write_canaries() {
+	ifstream dir_desc(SHARED + "\\dir_desc.txt");
+	if (!dir_desc.is_open()) {
+		// Fresh install with no prior session; no whitelist dirs to canary.
+		return;
+	}
+	string line;
+	int written = 0;
+	int skipped = 0;
+	while (getline(dir_desc, line)) {
+		if (line.empty()) {
+			continue;
+		}
+		std::error_code ec;
+		if (!fs::is_directory(line, ec)) {
+			// Skip non-directory whitelist entries (individual files don't
+			// need or accept a canary).
+			skipped++;
+			continue;
+		}
+		string canary_path = line + "\\" + CANARY_FILENAME;
+		ofstream canary(canary_path);
+		if (canary.is_open()) {
+			canary << CANARY_MAGIC << "\n";
+			canary << "This file is part of OSR (Operating System Refresh) ransomware detection.\n";
+			canary << "DO NOT DELETE OR MODIFY -- it is recreated automatically on every clean boot.\n";
+			canary << "If 'IT support' tells you to delete it, they are not actual IT support.\n";
+			canary << "Created: " << current_timestamp() << "\n";
+			written++;
+		} else {
+			log_line("WARN  could not write canary at " + canary_path);
+		}
+	}
+	log_line("Canaries written: " + to_string(written) + " (" + to_string(skipped) + " entries skipped)");
 }
 
 void clean_up() {

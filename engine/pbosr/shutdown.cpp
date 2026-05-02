@@ -17,15 +17,21 @@ static const string LOG_PATH = SHARED + "\\shutdown.log";
 void generate_whitelist();
 void parse_users();
 void parse_whitelist();
+void verify_canaries();
 bool SHCopy(LPCTSTR from, LPCTSTR to, int& errCode, bool& anyAborted);
 wstring to_wstring(string str);
 string current_timestamp();
 void log_line(const string& msg);
 
+// Canary file conventions — must match Boot.exe.
+static const string CANARY_FILENAME = "osr-canary.txt";
+static const string CANARY_MAGIC = "OSR_CANARY_v1";
+
 int main() {
 	log_line("=== Shutdown.exe begin ===");
 	parse_users();
 	generate_whitelist();
+	verify_canaries();
 	parse_whitelist();
 
 	remove("users.txt");
@@ -63,6 +69,94 @@ void log_line(const string& msg) {
 		lf << current_timestamp() << "  " << msg << "\n";
 	}
 	cout << msg << endl;
+}
+
+// Walk whitelist.txt and verify that each whitelisted directory still
+// contains an osr-canary.txt with the expected magic header. Boot.exe
+// dropped these in after restoring user files; if any are missing or
+// modified, ransomware likely touched the user data.
+//
+// Detection logic (with explicit handling of the first-run / mass-nuke
+// ambiguity):
+//   - failures == 0 and total > 0: clean.
+//   - failures > 0 and failures < total: PARTIAL tampering, definitely
+//     suspicious. Write canary-failure.flag for the host to act on.
+//   - failures == total > 0: ALL canaries missing. Could be the first
+//     shutdown of a fresh Clean VM (Boot.exe never ran), OR ransomware
+//     deleted everything. We log loudly but do NOT write the flag — the
+//     host-side extension scanner will catch the ransomware case via
+//     other signals (extensions, ransom notes), and we'd rather take
+//     the false-negative here than false-positive on every fresh
+//     install's first session.
+void verify_canaries() {
+	ifstream wl("whitelist.txt");
+	if (!wl.is_open()) {
+		log_line("INFO  no whitelist.txt; skipping canary verification");
+		return;
+	}
+	int total = 0;
+	int failures = 0;
+	vector<string> failure_paths;
+	string line;
+	while (getline(wl, line)) {
+		if (line.empty()) continue;
+		std::error_code ec;
+		if (!fs::is_directory(line, ec)) {
+			// Skip non-directory whitelist entries; canaries only live
+			// in directories.
+			continue;
+		}
+		total++;
+		string canary_path = line + "\\" + CANARY_FILENAME;
+		ifstream canary(canary_path);
+		if (!canary.is_open()) {
+			failures++;
+			failure_paths.push_back(canary_path + " (missing)");
+			continue;
+		}
+		string first_line;
+		getline(canary, first_line);
+		// Strip trailing CR if the file was written with \n and read on a
+		// CRLF platform — the magic check should be robust to that.
+		if (!first_line.empty() && first_line.back() == '\r') {
+			first_line.pop_back();
+		}
+		if (first_line != CANARY_MAGIC) {
+			failures++;
+			string sample = first_line.substr(0, 40);
+			failure_paths.push_back(canary_path + " (tampered: " + sample + "...)");
+			continue;
+		}
+		// Canary intact.
+	}
+
+	if (total == 0) {
+		log_line("INFO  no whitelist directories to canary-check");
+		return;
+	}
+	if (failures == 0) {
+		log_line("Canary check: " + to_string(total) + "/" + to_string(total) + " intact");
+		return;
+	}
+	if (failures == total) {
+		// Ambiguous: first-run OR mass nuke. Log but don't flag.
+		log_line("INFO  all " + to_string(total) + " canaries absent — likely first session "
+		         "after fresh install (or, less likely, full ransomware sweep). NOT flagging.");
+		return;
+	}
+	// Partial failure — definite tampering signal.
+	log_line("CANARY_TAMPERING  " + to_string(failures) + " of " + to_string(total)
+	         + " canaries missing or modified:");
+	for (const auto& p : failure_paths) {
+		log_line("    " + p);
+	}
+	ofstream flag(SHARED + "\\canary-failure.flag");
+	if (flag.is_open()) {
+		flag << failures << "/" << total << " canaries failed at " << current_timestamp() << "\n";
+		for (const auto& p : failure_paths) {
+			flag << p << "\n";
+		}
+	}
 }
 
 void parse_whitelist() {

@@ -118,13 +118,29 @@ from the shared folder before the Clean VM starts (so Boot.exe restores
 state instead of an encrypted one), and a loud log entry goes to
 `~/osr-host.log` for the admin to find via Tailscale SSH.
 
-**Canary files** (not yet implemented). Boot.exe writes known-content
-files (e.g. `canary.txt` containing a fixed string) to each whitelisted
-user folder during the restore. Shutdown.exe verifies the canaries on
-the next shutdown — if any are missing, modified, or moved, the session
-is flagged. Refuses to commit the session's files to the shared folder
-in that case. Real engineering: ~60 lines of C++ across both binaries,
-and both binaries need a rebuild + redeploy.
+**Canary files** (implemented; needs C++ rebuild before it takes
+effect). Boot.exe writes an `osr-canary.txt` to each whitelisted
+directory after the restore. The first line is a fixed magic string
+(`OSR_CANARY_v1`); the rest is a "do not delete" notice readable by
+end-users.
+
+Shutdown.exe verifies each canary on the next shutdown. The detection
+logic deliberately handles the first-run / mass-nuke ambiguity:
+
+  - All canaries intact: clean.
+  - Some present, some missing or modified: definite tampering.
+    Writes `canary-failure.flag` to the shared folder; host.sh
+    reads it and treats the session as SUSPICIOUS.
+  - All canaries absent: ambiguous (could be the first session of a
+    fresh Clean VM where Boot.exe never ran, or a thorough ransomware
+    sweep). Logs loudly but does NOT flag — the host-side extension
+    scanner will catch the ransomware case via other signals, and
+    we'd rather take the false-negative here than false-positive on
+    every fresh install's first session.
+
+What this catches that the extension scanner doesn't: ransomware that
+encrypts files in place without changing extensions. That's the
+cleaner end of the commodity-ransomware spectrum.
 
 **Entropy-based detection** (not implemented). Encrypted files have
 near-maximum Shannon entropy. A scanner could compare a session's
@@ -181,21 +197,21 @@ Future improvements:
 
 ## Prioritized implementation order
 
-| # | Item | Where | Effort | Impact |
-|---|------|-------|--------|--------|
-| 1 | Defender + Controlled Folder Access in Clean VM | DEPLOYMENT.md procedure | small (config) | high |
-| 2 | Host-side extension + ransom-note scan | `host.sh` | small (~40 LOC bash) | high |
-| 3 | Canary files | shutdown.cpp + boot.cpp | medium (~60 LOC C++) | medium |
-| 4 | Network segmentation (Dirty VM firewall) | per-customer config | small | medium |
-| 5 | Read-only mount split | architectural | large | medium |
-| 6 | Per-file hash-versus-prior-shift detection | host.sh + new hash store | medium | low-medium |
-| 7 | Entropy-based detection | host.sh + Python helper | medium | low (lots of FP) |
-| 8 | Air-gapped offsite backup | operations | small (config) | low (recovery only) |
+| # | Item | Where | Effort | Impact | Status |
+|---|------|-------|--------|--------|--------|
+| 1 | Defender + Controlled Folder Access in Clean VM | DEPLOYMENT.md procedure | small (config) | high | documented; deployer applies |
+| 2 | Host-side extension + ransom-note scan | `host.sh` | small (~40 LOC bash) | high | **implemented** |
+| 3 | Canary files | shutdown.cpp + boot.cpp | medium (~80 LOC C++) | medium | **implemented** (needs rebuild) |
+| 4 | Network segmentation (Dirty VM firewall) | per-customer config | small | medium | not started |
+| 5 | Read-only mount split | architectural | large | medium | not started |
+| 6 | Per-file hash-versus-prior-shift detection | host.sh + new hash store | medium | low-medium | not started |
+| 7 | Entropy-based detection | host.sh + Python helper | medium | low (lots of FP) | not started |
+| 8 | Air-gapped offsite backup | operations | small (config) | low (recovery only) | not started |
 
-#1 and #2 land first; together they catch the bulk of commodity
-ransomware. #3 makes the rest visible. Below #3 the marginal returns
-diminish quickly versus what you'd get by just buying Microsoft
-Defender for Endpoint.
+#1 + #2 + #3 together cover the bulk of commodity ransomware:
+prevention (CFA), extension/note detection, and content-tampering
+detection. Below #3 the marginal returns diminish quickly versus what
+you'd get by just buying Microsoft Defender for Endpoint.
 
 ## What this does not protect against
 

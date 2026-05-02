@@ -54,10 +54,16 @@ Recent hardening:
 - `shutdown.cpp` and `boot.cpp` log per-entry success/failure to the
   shared folder (`shutdown.log`, `boot.log`), surface SHFileOperation
   return codes and aborted-state, and write completion sentinels that
-  the host can verify. Note: the C++ source has been edited but **not
-  recompiled** — this needs to happen on a Windows box with VS before
-  redeploy. If the colleague's developer hasn't rebuilt the binaries,
-  the deployed `.exe` files are still the old silent-failure versions.
+  the host can verify.
+- `boot.cpp` writes `osr-canary.txt` files into each whitelisted
+  directory after restore; `shutdown.cpp` verifies them and writes
+  `canary-failure.flag` if any are tampered (host.sh treats this as a
+  SUSPICIOUS signal alongside its own extension scanner).
+- Note: all `shutdown.cpp` and `boot.cpp` source changes have been
+  edited but **not recompiled** — this needs to happen on a Windows
+  box with VS before redeploy. If the colleague's developer hasn't
+  rebuilt the binaries, the deployed `.exe` files are still the old
+  versions and the host-side improvements alone won't help.
 - `shutdown.cpp` was carrying a count-vs-dir_desc alignment bug (count
   was incremented even on copy failure, leaving gaps that boot.cpp
   couldn't detect); fixed.

@@ -214,14 +214,29 @@ else
 fi
 
 # 2. Ransomware scan on the dirty session's data BEFORE the clean VM
-#    restores it. If indicators are found, suppress the restore by
-#    deleting dir_desc.txt — Boot.exe will then have nothing to copy
-#    back, and the next user gets a fresh clean Windows. The encrypted
-#    data is preserved in the archive (marked .SUSPICIOUS) so an admin
-#    can recover legitimate files via Tailscale SSH.
+#    restores it. Two independent signals:
+#      a) Extension/ransom-note pattern scan (catches commodity ransomware
+#         that appends extensions or drops notes).
+#      b) Canary verification flag from Shutdown.exe (catches
+#         encryption-in-place that doesn't change extensions — the
+#         cleaner ransomware families).
+#    If either triggers, suppress the restore by deleting dir_desc.txt.
+#    Boot.exe will then have nothing to copy back, and the next user
+#    gets a fresh clean Windows. The encrypted data is preserved in the
+#    archive (marked .SUSPICIOUS) so an admin can recover legitimate
+#    files via Tailscale SSH.
 SUSPICIOUS_SESSION=0
 if ! scan_for_ransomware_signs "$DEST_DIR"; then
     SUSPICIOUS_SESSION=1
+fi
+CANARY_FLAG="$DEST_DIR/canary-failure.flag"
+if [ -f "$CANARY_FLAG" ]; then
+    log "RANSOMWARE_INDICATOR  Shutdown.exe reported canary tampering:"
+    while read -r line; do log "    $line"; done < "$CANARY_FLAG"
+    SUSPICIOUS_SESSION=1
+    rm -f "$CANARY_FLAG"
+fi
+if [ "$SUSPICIOUS_SESSION" -eq 1 ]; then
     log "WARN: dirty session flagged SUSPICIOUS; suppressing restore for this cycle"
     log "WARN: encrypted/suspicious files preserved in archive but NOT propagated"
     rm -f "$DEST_DIR/dir_desc.txt"
