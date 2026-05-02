@@ -128,9 +128,15 @@ What is broken or missing:
   *Read `docs/why-not-winpe.md` before pursuing this — the same
   Microsoft-patch-cadence problems that killed the WindowsPE-imaging
   approach apply here, and DiscUtils-built ISOs hit them too.*
-- **Plaintext password storage** in `LocalUserStore`. Hash on create + on
-  lookup before any real-user deployment. Marked `TODO(handoff)` in
-  `LocalUserStore.QueryUsersAsync`.
+- **Password hashing now uses bcrypt** (`BCrypt.Net-Next` 4.0.3, default
+  work factor 11). `AccountCreate` hashes on create; `LocalUserStore.QueryUsersAsync`
+  verifies on lookup, with a one-shot auto-migration path for any plaintext
+  entries left over in `users.json` from before this change. The
+  migration: when a stored password doesn't begin with `$2`, fall back to
+  plaintext compare, and on a successful match re-hash and persist before
+  returning the user. Subsequent logins for that user use bcrypt verify.
+  Drop the `users.json` file to start clean if you'd rather skip the
+  migration path.
 - **The UI is not wired to `engine/`.** Today the WPF app and the C++
   shutdown/boot binaries are independent; the WPF "Run Update" button
   produces a local zip, while the engine's `\\VBoxSvr\dest` shared-folder
@@ -286,23 +292,16 @@ deployment is a person-week.
    `FirstTimeSetup` already produces something close to that whitelist
    shape; it just doesn't write it where the engine looks.
 
-3. **Address the password-hashing issue** before any field deployment.
-   `LocalUserStore.QueryUsersAsync` carries a `TODO(handoff)` to that
-   effect.
+3. **Replace remaining hardcoded paths in the C++ side** —
+   `\\VBoxSvr\dest`, the whitelist contents in `generate_whitelist()`,
+   the per-customer shutdown command. Pull into a config file or
+   command-line args before shipping to a second customer. (`host.sh`
+   on the Linux side is already env-driven; the C++ binaries are not.)
 
-4. **Replace hardcoded VM names and shared-folder paths** with
-   config-driven values (the C++ side has hardcoded `\\VBoxSvr\dest`,
-   `Dirty-2` and `Clean-2` throughout; pulling these into env vars or a
-   small config file is a one-evening job and lets the engine ship to
-   multiple customers).
-
-5. **Tighten `host.sh`'s disk swap** to clone-then-rename rather than
-   delete-then-clone (see `engine/DEPLOYMENT.md` known limitations).
-
-6. **Prune unused dependencies.** `RhinoCommon` is referenced but not
+4. **Prune unused dependencies.** `RhinoCommon` is referenced but not
    used; removing it would shrink the package restore noticeably.
 
-7. **Resist the temptation to revisit WindowsPE-style imaging.** It will
+5. **Resist the temptation to revisit WindowsPE-style imaging.** It will
    feel like the obvious next architectural improvement — bare metal,
    no VirtualBox layer, native performance. `docs/why-not-winpe.md`
    walks through why it was prototyped and rejected, with specific

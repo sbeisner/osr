@@ -60,7 +60,7 @@ namespace osr_dotnet.Views
                 User new_user = new User();
                 new_user.Name = full_name;
                 new_user.Email = email;
-                new_user.Password = pass1;
+                new_user.Password = BCrypt.Net.BCrypt.HashPassword(pass1);
                 new_user.DateLicenseIssued = DateTime.Today.ToString();
                 new_user.DateLicenseExpires = DateTime.Today.AddYears(1).ToString();
                 new_user.IsInitialized = "false";

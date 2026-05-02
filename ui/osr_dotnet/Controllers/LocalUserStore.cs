@@ -94,32 +94,59 @@ namespace osr_dotnet.Controllers
             await SaveAsync();
         }
 
-        public Task<User> QueryUsersAsync(string email, string password)
+        public async Task<User> QueryUsersAsync(string email, string password)
         {
-            // TODO(handoff): plaintext password comparison. Hash on create
-            // and on lookup before any real-user deployment.
+            // Passwords are bcrypt-hashed on AccountCreate (see User.Password
+            // setter call in AccountCreate.Save_Account_To_DB). For users that
+            // predate the hashing change, their stored Password is plaintext;
+            // we detect that case (no leading "$2" prefix), do a plaintext
+            // compare, and on a match re-hash and persist so the next login
+            // is on the new path. One-time per legacy user.
             User match;
+            bool needsMigration = false;
             lock (_lock)
             {
-                var matches = _users.Where(u =>
-                    string.Equals(u.Email, email, StringComparison.OrdinalIgnoreCase)
-                    && u.Password == password).ToList();
+                var candidates = _users.Where(u =>
+                    string.Equals(u.Email, email, StringComparison.OrdinalIgnoreCase)).ToList();
 
-                if (matches.Count > 1)
+                if (candidates.Count == 0)
                 {
-                    Console.WriteLine("Error: Multiple users match search");
-                    match = null;
+                    return null;
                 }
-                else if (matches.Count == 1)
+                if (candidates.Count > 1)
                 {
-                    match = matches[0];
+                    Console.WriteLine("Error: multiple users match email " + email);
+                    return null;
+                }
+
+                match = candidates[0];
+
+                bool ok;
+                bool isBcryptHash = !string.IsNullOrEmpty(match.Password)
+                                    && match.Password.StartsWith("$2");
+                if (isBcryptHash)
+                {
+                    try { ok = BCrypt.Net.BCrypt.Verify(password, match.Password); }
+                    catch { ok = false; }
                 }
                 else
                 {
-                    match = null;
+                    ok = (match.Password == password);
+                    needsMigration = ok;
+                }
+
+                if (!ok)
+                {
+                    return null;
                 }
             }
-            return Task.FromResult(match);
+
+            if (needsMigration)
+            {
+                match.Password = BCrypt.Net.BCrypt.HashPassword(password);
+                await UpdateUser(match);
+            }
+            return match;
         }
 
         private async Task SaveAsync()
