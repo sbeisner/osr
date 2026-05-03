@@ -250,110 +250,51 @@ fresh clone of this VM's disk.
     do not want updates fighting the OSR cycle during the demo period.
 12. Install the customer's software stack: Office, QuickBooks, Outlook,
     whatever they use. Configure it.
-13. **Configure ransomware protection.** Microsoft Defender's Controlled
-    Folder Access (CFA) is the highest-leverage thing you can turn on
-    inside the Clean image. It blocks unauthorized apps from writing to
-    user data folders, which defeats most commodity ransomware before
-    encryption can land. Because CFA's policy is part of the Clean image,
-    it's restored to a known-good state on every cycle — a Dirty-side
-    compromise can't permanently disable it.
+13. **Run `prepare-clean-vm.ps1`** to do the rest of the Clean-side
+    setup in one shot. Copy `prepare-clean-vm.ps1` from
+    `engine/prepare-clean-vm.ps1` (or `/opt/osr/engine/` on the host)
+    onto the same USB stick as `Boot.exe`. Inside the VM:
 
-    Open an **admin** PowerShell (right-click Start → "Windows PowerShell
-    (Admin)") and run:
+    1. Open the USB drive in File Explorer.
+    2. Right-click `prepare-clean-vm.ps1` → **Run with PowerShell**
+       — or, for visible output, open an admin PowerShell prompt
+       (right-click Start → "Windows PowerShell (Admin)") and run:
+       ```powershell
+       cd E:\        # adjust to your USB drive letter
+       .\prepare-clean-vm.ps1
+       ```
+    3. The script:
+       - Copies `Boot.exe` to `C:\osr\Boot.exe`
+       - Enables Defender's Controlled Folder Access (CFA) on the OSR
+         whitelist paths, with `C:\osr\Boot.exe` and the standard Office
+         apps in the allowed-applications list
+       - Registers the `OSR Boot` Scheduled Task (runs Boot.exe at
+         logon with highest privileges)
+       - Best-effort pauses Windows Update for 5 weeks
 
+    Add `-ExtraAllowedApps` for any customer-specific apps that need
+    to write to protected folders (e.g. QuickBooks):
     ```powershell
-    # Turn on Controlled Folder Access
-    Set-MpPreference -EnableControlledFolderAccess Enabled
-
-    # Add the user data paths from the OSR whitelist as protected folders
-    $u = "C:\Users\staff"   # change to whatever operator name you used
-    Add-MpPreference -ControlledFolderAccessProtectedFolders @(
-        "$u\Desktop",
-        "$u\Documents",
-        "$u\Pictures",
-        "$u\Music",
-        "$u\Videos",
-        "$u\AppData\Roaming\Microsoft\Signatures",
-        "$u\AppData\Roaming\Microsoft\UProof",
-        "C:\Users\Public\Documents\Intuit\QuickBooks"
-    )
-
-    # Allow the legitimate apps that need to write to protected folders.
-    # IMPORTANT: include C:\osr\Boot.exe (added in step 15) so OSR's own
-    # restore step can write user files back into the protected folders.
-    # Without this, Boot.exe gets blocked by CFA and the restore fails.
-    Add-MpPreference -ControlledFolderAccessAllowedApplications @(
-        "C:\osr\Boot.exe",
-        "C:\Program Files\Microsoft Office\root\Office16\WINWORD.EXE",
-        "C:\Program Files\Microsoft Office\root\Office16\EXCEL.EXE",
-        "C:\Program Files\Microsoft Office\root\Office16\OUTLOOK.EXE",
-        "C:\Program Files\Microsoft Office\root\Office16\POWERPNT.EXE"
-    )
-
-    # Verify
-    Get-MpPreference | Select-Object EnableControlledFolderAccess, `
-        ControlledFolderAccessProtectedFolders, `
-        ControlledFolderAccessAllowedApplications
+    .\prepare-clean-vm.ps1 -ExtraAllowedApps `
+        "C:\Program Files (x86)\Intuit\QuickBooks 2024\QBW32.EXE"
     ```
 
-    Also confirm that **cloud-delivered protection** and **automatic
-    sample submission** are on (Settings → Update & Security → Windows
-    Security → Virus & threat protection → Manage settings). These
-    update Defender's definitions during each Dirty session, which is
-    important since the Clean image is otherwise frozen.
+    See `../docs/ransomware-defense.md` for why CFA is the highest-
+    priority preventive measure.
 
-    See `../docs/ransomware-defense.md` for the full threat model and
-    why this is the highest-priority preventive measure.
+14. **Do not log out yet.** From this point forward, if you log out
+    and log back in to Clean-2, Boot.exe will run, find no
+    `dir_desc.txt`, and immediately shut the VM down (that's its
+    designed behavior on a fresh Clean boot). The current logged-in
+    session is the last one where you can work normally before the
+    snapshot.
 
-14. **Make `C:\osr` and copy Boot.exe in.** From the same admin
-    PowerShell:
+    From the current session: **Start → Power → Shut down**. Wait
+    for the VM to power off in VirtualBox manager.
 
-    ```powershell
-    New-Item -ItemType Directory -Path C:\osr -Force | Out-Null
-    Copy-Item E:\Boot.exe C:\osr\Boot.exe   # adjust path to your USB drive letter
-    ```
-
-15. **Wire `Boot.exe` to run at logon as a Scheduled Task.** Boot.exe
-    is what restores the user's files in the cloned Clean VM during
-    each cycle — it must run automatically as soon as the operator
-    logs in. Step-by-step in Task Scheduler:
-
-    1. Start → type `Task Scheduler`, open it.
-    2. Right pane: **Create Task...** (not "Create Basic Task").
-    3. **General tab**:
-       - Name: `OSR Boot`
-       - Description: `Runs C:\osr\Boot.exe at logon to restore user files`
-       - Security options: select **"Run whether user is logged on or not"**
-       - Check **"Run with highest privileges"**
-       - Configure for: `Windows 10` (works for Win11 too)
-    4. **Triggers tab → New...**:
-       - Begin the task: `At log on`
-       - Specific user: select your operator account (e.g. `staff`)
-       - Click OK.
-    5. **Actions tab → New...**:
-       - Action: `Start a program`
-       - Program/script: `C:\osr\Boot.exe`
-       - Click OK.
-    6. **Conditions tab**: uncheck **"Start the task only if the computer
-       is on AC power"** (the kiosk PC may not have a battery the OS
-       recognizes).
-    7. **Settings tab**: leave defaults; in particular, leave
-       "Allow task to be run on demand" checked.
-    8. Click OK. Windows prompts for the operator account password —
-       enter it.
-
-16. **Do not log out yet.** From this point forward, if you log out and
-    log back in to Clean-2, Boot.exe will run, find no `dir_desc.txt`,
-    and immediately shut the VM down (that's its designed behavior on
-    a fresh Clean boot). The current logged-in session is the last one
-    where you can work normally before the snapshot.
-
-    From the current session: **Start → Power → Shut down**. Wait for
-    the VM to power off in VirtualBox manager.
-
-17. Right-click Clean-2 in the VirtualBox manager → **Snapshots → Take
-    Snapshot → name it "pristine"**. This is your rollback point if you
-    ever need to redo the install.
+15. Right-click Clean-2 in the VirtualBox manager → **Snapshots →
+    Take Snapshot → name it "pristine"**. This is your rollback
+    point if you ever need to redo the install.
 
 ## 7. Create the Dirty-2 VM
 
@@ -373,40 +314,30 @@ clean clone every shutdown.
      `dest`, auto-mount, permanent.
    - **Network**: Adapter 1 should still be NAT (inherited from clone).
      Confirm.
-4. **Disable the OSR Boot scheduled task in Dirty-2.** The clone copied
-   the task you created in Clean-2 step 15. On the Dirty side you do
-   NOT want Boot.exe running at logon — you want the operator's
-   normal Windows session.
-   - Open Task Scheduler in the cloned Dirty-2 VM, find "OSR Boot",
-     right-click → **Disable**.
-   - Alternatively, **Delete** the task.
-5. Open an admin PowerShell in Dirty-2:
+4. **Run `prepare-dirty-vm.ps1`.** Copy it onto the same USB stick as
+   `Shutdown.exe`. Inside the Dirty-2 VM, open an admin PowerShell
+   prompt and run:
 
    ```powershell
-   # C:\osr already exists from the clone; replace Boot.exe with Shutdown.exe
-   Remove-Item C:\osr\Boot.exe -ErrorAction SilentlyContinue
-   Copy-Item E:\Shutdown.exe C:\osr\Shutdown.exe   # adjust drive letter
+   cd E:\        # adjust to your USB drive letter
+   .\prepare-dirty-vm.ps1
    ```
 
-6. **Wire `Shutdown.exe` as a Group Policy shutdown script.** This
-   runs Shutdown.exe whenever the user issues a shutdown, before
-   Windows finishes powering off.
-   1. Start → type `gpedit.msc` → Enter.
-      (If gpedit is missing — Windows Home doesn't ship it — you can
-      enable it via DISM, but consider upgrading the VM's Windows
-      edition to Pro instead. Pro is what production should run on.)
-   2. Navigate the left tree to:
-      **Computer Configuration → Windows Settings → Scripts (Startup/Shutdown)**.
-   3. Right pane: double-click **Shutdown**.
-   4. Click **Add...** → **Browse...** → navigate to `C:\osr` →
-      select `Shutdown.exe` → Open.
-   5. **Script Parameters**: leave blank.
-   6. Click OK on the Add dialog, then OK on the Shutdown Properties
-      dialog.
-   7. Verify: at the top of the Shutdown Properties dialog, with
-      **PowerShell Scripts** tab, you should see... actually no,
-      Shutdown.exe is a regular .exe, it shows under the **Scripts**
-      tab. Confirm `C:\osr\Shutdown.exe` is listed.
+   The script:
+   - Removes the cloned `OSR Boot` scheduled task (correct for Clean,
+     wrong for Dirty — would shut the VM down at every logon)
+   - Removes the leftover `C:\osr\Boot.exe`
+   - Copies `Shutdown.exe` to `C:\osr\Shutdown.exe`
+   - Wires `Shutdown.exe` as a local Group Policy shutdown script by
+     writing `C:\Windows\System32\GroupPolicy\Machine\Scripts\scripts.ini`
+     directly (works on Windows Home as well as Pro/Enterprise — Home
+     lacks the gpedit.msc UI but the underlying mechanism is the same)
+   - Runs `gpupdate /force` so the change takes effect without a reboot
+
+5. **Verify on Pro/Enterprise (optional, skip on Home):** Start →
+   Run → `gpedit.msc` → Computer Configuration → Windows Settings →
+   Scripts (Startup/Shutdown) → Shutdown → double-click. You should
+   see `C:\osr\Shutdown.exe` listed.
 
 7. **Test it**: from inside Dirty-2, shut Windows down (Start → Power →
    Shut down). The VM should run Shutdown.exe (a brief console window

@@ -127,9 +127,14 @@ ENGINE_DST=/opt/osr/engine
 echo "[*] Installing engine scripts to $ENGINE_DST"
 mkdir -p "$ENGINE_DST"
 SRC_DIR="$(dirname "$(readlink -f "$0")")"
-install -m 0755 "$SRC_DIR/host.sh"        "$ENGINE_DST/host.sh"
-install -m 0755 "$SRC_DIR/kiosk-loop.sh"  "$ENGINE_DST/kiosk-loop.sh"
-install -m 0755 "$SRC_DIR/osr-status.sh"  "$ENGINE_DST/osr-status.sh"
+install -m 0755 "$SRC_DIR/host.sh"           "$ENGINE_DST/host.sh"
+install -m 0755 "$SRC_DIR/kiosk-loop.sh"     "$ENGINE_DST/kiosk-loop.sh"
+install -m 0755 "$SRC_DIR/osr-status.sh"     "$ENGINE_DST/osr-status.sh"
+# Inside-the-VM helpers — copied to a path the deployer can grab from
+# the Linux host (or, equivalently, just from the github repo on a USB
+# stick). Stored alongside the engine for discoverability.
+install -m 0644 "$SRC_DIR/prepare-clean-vm.ps1" "$ENGINE_DST/prepare-clean-vm.ps1"
+install -m 0644 "$SRC_DIR/prepare-dirty-vm.ps1" "$ENGINE_DST/prepare-dirty-vm.ps1"
 # Symlink so admins reaching the host via Tailscale SSH can just type
 # `osr-status` without remembering the install path.
 ln -sf "$ENGINE_DST/osr-status.sh" /usr/local/bin/osr-status
