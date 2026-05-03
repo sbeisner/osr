@@ -506,17 +506,3 @@ deploys, fleet-update story, license-model decision, and a couple of
 design-level items (read-only host-side mount during user sessions,
 VSS for locked Outlook .pst files).
 
-## Long-term: replace this with off-the-shelf tooling
-
-This whole engine — Linux + VirtualBox + a swap script — is a
-hand-rolled answer to a question that has commercial answers. Before
-investing more engineering into it, evaluate:
-
-- **Faronics Deep Freeze** ($30-50/seat/year): drops in on the bare-metal
-  Windows install, no Linux/VBox layer. Reverts the system on every
-  reboot, "ThawSpaces" hold whatever you want preserved.
-- **Windows Unified Write Filter (UWF)**: built into Windows 10/11
-  Enterprise IoT. Same idea; free if you have Enterprise licenses.
-
-If the customer's price ceiling rules those out, the OSR engine is a
-defensible "build" answer. If not, "buy" wins.

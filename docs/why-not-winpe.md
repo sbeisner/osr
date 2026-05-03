@@ -278,25 +278,36 @@ about Windows internals**. As long as VirtualBox can store a `.vhd` and
 clone it, the system works — regardless of what Microsoft does inside
 that VHD. That insulation is the entire point of the architecture.
 
-## Footnote: Faronics Deep Freeze and Windows UWF
+## Comparison: Faronics Deep Freeze and Windows UWF
 
-If you ever revisit the WinPE direction, also revisit the question of
-whether to build the imaging machinery at all. Two off-the-shelf products
-already solve most of this problem and have the dedicated team you would
-otherwise have to assemble:
+The two products in the existing market that solve adjacent problems
+to OSR:
 
 - **Faronics Deep Freeze**: drops in on the live Windows install, no
-  WinPE, no Linux host. Reverts the system on every reboot, "ThawSpaces"
-  hold whatever you want preserved. A team of engineers at Faronics
-  follows every Windows revision so you don't have to.
+  WinPE, no Linux host. Reverts the system on every reboot;
+  "ThawSpaces" hold whatever you want preserved.
 - **Windows Unified Write Filter (UWF)**: built into Windows 10/11
-  Enterprise IoT. Microsoft-supported by definition. Same revert-on-
-  reboot model with a registry/file whitelist.
+  Enterprise IoT. Same revert-on-reboot model with a file/registry
+  allowlist for what gets persisted.
 
-If the customer's per-seat budget can absorb either ($30–50/seat/year
-for Deep Freeze; the cost difference between Pro and Enterprise IoT
-licensing for UWF), the strongest move is to drop the in-house
-maintenance burden entirely. The WinPE rejection above applies just
-as forcefully to "should we keep building OSR at all" — the answer
-depends on whether the customer's price ceiling rules out those
-existing tools.
+How OSR's architecture differs:
+
+- **Deep Freeze runs on bare-metal Windows.** It's itself a Windows
+  kernel driver inside the system it's trying to clean. Anything that
+  compromises the Windows kernel during the dirty session — driver-
+  level rootkit, signed-driver abuse, attached-device firmware
+  payload — has the opportunity to disable or evade Deep Freeze's
+  reset because they're running in the same trust boundary. OSR's
+  Linux host sits *outside* the Windows install entirely; the reset
+  is a disk-level VHD swap by a process Windows can't reach, see, or
+  affect from inside the guest.
+- **UWF requires Enterprise IoT licensing.** Small institutional
+  customers — the price-sensitive segment — typically can't procure
+  Enterprise IoT and run on retail or OEM Windows licenses. UWF is
+  effectively unavailable at their price point.
+- **Both products live and die with Windows internals.** They have
+  to track Microsoft's monthly patches and feature updates the same
+  way a WinPE-imaging approach would. OSR's Linux host knows nothing
+  about Windows internals; the same host script will run against any
+  Windows version inside the VM with no porting work as Microsoft's
+  release cadence keeps moving.

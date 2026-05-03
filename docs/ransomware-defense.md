@@ -210,8 +210,9 @@ Future improvements:
 
 #1 + #2 + #3 together cover the bulk of commodity ransomware:
 prevention (CFA), extension/note detection, and content-tampering
-detection. Below #3 the marginal returns diminish quickly versus what
-you'd get by just buying Microsoft Defender for Endpoint.
+detection. Below #3 the marginal returns diminish quickly; the remaining
+items are worth picking up only when a specific customer signal asks
+for them.
 
 ## What this does not protect against
 
@@ -232,9 +233,10 @@ OSR's ransomware story has hard limits a customer should understand:
   OSR is a software product running on commodity hardware.
 
 The honest framing for a customer: OSR plus Defender plus CFA stops
-most opportunistic attacks. For higher assurance, pair OSR with a
-managed EDR product. For environments where data loss is genuinely
-catastrophic (regulated healthcare, financial services), OSR is not
-a sufficient defense on its own — those customers want UWF + EDR +
-network segmentation + offsite backup + 24/7 monitoring, which is
-not the OSR price point.
+most opportunistic attacks. For environments where data loss is
+genuinely catastrophic (regulated healthcare, financial services),
+defense-in-depth at the OSR layer needs to be paired with the
+customer's broader security posture — network segmentation, offsite
+backup, 24/7 monitoring. OSR's job is to make the per-machine recovery
+story bulletproof; the broader stack remains the customer's
+responsibility.

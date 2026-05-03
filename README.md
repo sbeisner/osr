@@ -108,8 +108,8 @@ have to be re-litigated:
   and feature-update churn make image-replace approaches a dedicated-team
   problem; the VirtualBox abstraction insulates the host from anything
   Microsoft does inside the VM. See `docs/why-not-winpe.md` for the full
-  rationale. Faronics Deep Freeze and Windows UWF are off-the-shelf
-  alternatives if the customer's licensing budget allows.
+  rationale, including how OSR's architecture compares against the
+  existing market (Faronics Deep Freeze, Windows UWF).
 - **ASP.NET Core + Angular UI** (`filesystem_refresh`): wrong shape for a
   per-machine local-control-panel app. WPF replaced it.
 

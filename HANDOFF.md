@@ -11,13 +11,15 @@ The `ui/` directory contains the start of a productized WPF app on top of
 that concept; it builds and runs out of the box (no cloud dependency) but
 the ISO builder and the post-setup configuration screen are unfinished.
 
-If you want to revive this project, the highest-value path is probably:
-1. Decide whether to keep the VirtualBox-based `engine/` approach at all,
-   or replace it with one of the off-the-shelf tools listed at the bottom.
-2. Either way, decide what role (if any) the `ui/` codebase plays — and
-   how (if at all) you want to wire it to the engine.
-3. Address the security and design issues called out below before any
-   real-user deployment.
+If you want to advance this project, the highest-value path is probably:
+1. Decide what role the `ui/` codebase plays alongside the engine, and
+   wire the two together so the UI's whitelist drives Shutdown.exe's
+   copy step.
+2. Address the security and design issues called out below before any
+   real-user deployment (the items under "Before deploying to real
+   users").
+3. Build the master-image cloning workflow so per-machine deploy time
+   drops from hours to minutes.
 
 ## Origins / what was removed
 
@@ -280,35 +282,20 @@ deployment is a person-week.
 
 ## Suggested next steps, in priority order
 
-1. **Decide whether to build or buy.** The original product target — clean a
-   public-access Windows machine on every shutdown — is solved off-the-shelf
-   by:
-   - **Faronics Deep Freeze** (cheap per-seat license, the de-facto industry
-     standard for libraries / kiosks / public terminals).
-   - **Windows Unified Write Filter (UWF)**, built into Win 10/11
-     Enterprise and IoT — redirects all writes to a discardable overlay,
-     with a whitelist for files/registry to persist.
-   - **Folder redirection + FSLogix profile containers** to a small NAS,
-     making the system disk genuinely disposable.
-   The strongest case for continuing this project is if there is a feature
-   or price point those tools don't hit. Read `docs/why-not-winpe.md` —
-   most of its argument applies just as forcefully to the question of
-   whether to keep building OSR at all.
-
-2. **Wire the UI to the engine.** The two halves currently know nothing
+1. **Wire the UI to the engine.** The two halves currently know nothing
    about each other. The most natural integration: the WPF
    `Configure.xaml` "Run Update" button shells out to the `engine/pbosr`
    shutdown binary with a path to the user's whitelist file.
    `FirstTimeSetup` already produces something close to that whitelist
    shape; it just doesn't write it where the engine looks.
 
-3. **Replace remaining hardcoded paths in the C++ side** —
+2. **Replace remaining hardcoded paths in the C++ side** —
    `\\VBoxSvr\dest`, the whitelist contents in `generate_whitelist()`,
    the per-customer shutdown command. Pull into a config file or
    command-line args before shipping to a second customer. (`host.sh`
    on the Linux side is already env-driven; the C++ binaries are not.)
 
-4. **Resist the temptation to revisit WindowsPE-style imaging.** It will
+3. **Resist the temptation to revisit WindowsPE-style imaging.** It will
    feel like the obvious next architectural improvement — bare metal,
    no VirtualBox layer, native performance. `docs/why-not-winpe.md`
    walks through why it was prototyped and rejected, with specific
