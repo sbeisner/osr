@@ -29,6 +29,13 @@
 #   MAX_WAIT_SEC           Max seconds to wait for a VM to power off
 #                          before forcibly killing it (default 1800)
 #   LOG_FILE               Where to log (default ~/osr-host.log)
+#   DRY_RUN                If 1, log every state-changing action but skip
+#                          the actual VM start/swap/mv calls. The
+#                          ransomware scanner and canary check still run
+#                          (they are read-only and useful for setup
+#                          verification). Use this to validate the
+#                          script's wiring before trusting it with a
+#                          real Dirty VHD. Default 0.
 
 set -uo pipefail
 
@@ -44,6 +51,7 @@ ARCHIVE_KEEP=${ARCHIVE_KEEP:-7}
 POLL_INTERVAL_SEC=${POLL_INTERVAL_SEC:-5}
 MAX_WAIT_SEC=${MAX_WAIT_SEC:-1800}
 LOG_FILE=${LOG_FILE:-$HOME/osr-host.log}
+DRY_RUN=${DRY_RUN:-0}
 
 log() {
     local ts
@@ -56,11 +64,31 @@ die() {
     exit 1
 }
 
+# run <cmd> <args...>: execute <cmd> normally, OR if DRY_RUN=1, log
+# what would have run and skip the call. Use for any state-changing
+# operation (VBoxManage start/clone/storageattach, mv, rm of files
+# we'd want to keep around for forensic inspection, etc.).
+# In live mode, stdout+stderr of <cmd> go to LOG_FILE so VBoxManage
+# noise doesn't spam the operator's terminal. Callers should NOT add
+# their own >>"$LOG_FILE" 2>&1 redirect — run handles that.
+# Returns the underlying command's exit code, or 0 in dry-run.
+run() {
+    if [ "$DRY_RUN" -eq 1 ]; then
+        log "DRY-RUN  would execute: $*"
+        return 0
+    fi
+    "$@" >>"$LOG_FILE" 2>&1
+}
+
 # Wait for the named VM to leave the running state. Force-poweroff if it
 # overruns MAX_WAIT_SEC. Returns 0 if the VM stopped cleanly (or after a
 # clean ACPI shutdown), 1 if we had to force it off.
 wait_for_vm_off() {
     local vm=$1
+    if [ "$DRY_RUN" -eq 1 ]; then
+        log "DRY-RUN  would wait for $vm to power off"
+        return 0
+    fi
     local elapsed=0
     while VBoxManage showvminfo "$vm" --machinereadable 2>/dev/null \
         | grep -q '^VMState="running"$'; do
@@ -78,6 +106,10 @@ wait_for_vm_off() {
 
 archive_dest() {
     if [ ! -d "$DEST_DIR" ] || [ -z "$(ls -A "$DEST_DIR" 2>/dev/null)" ]; then
+        return 0
+    fi
+    if [ "$DRY_RUN" -eq 1 ]; then
+        log "DRY-RUN  would archive $DEST_DIR -> $ARCHIVE_DIR/<timestamp> and prune > $ARCHIVE_KEEP"
         return 0
     fi
     mkdir -p "$ARCHIVE_DIR"
@@ -193,10 +225,15 @@ scan_for_ransomware_signs() {
 
 mkdir -p "$(dirname "$LOG_FILE")"
 log "=== cycle start (DIRTY=$DIRTY_VM, CLEAN=$CLEAN_VM) ==="
+if [ "$DRY_RUN" -eq 1 ]; then
+    log "DRY-RUN  state-changing actions will be logged but skipped"
+    log "DRY-RUN  read-only steps (sentinel check, ransomware scan, canary"
+    log "DRY-RUN  flag check) DO run so wiring can be validated"
+fi
 
 # 1. Dirty VM — the user's session
 log "Starting $DIRTY_VM"
-if ! VBoxManage startvm "$DIRTY_VM" >>"$LOG_FILE" 2>&1; then
+if ! run VBoxManage startvm "$DIRTY_VM"; then
     die "could not start $DIRTY_VM"
 fi
 log "Waiting for $DIRTY_VM to power off"
@@ -208,7 +245,7 @@ wait_for_vm_off "$DIRTY_VM"
 SENTINEL="$DEST_DIR/shutdown-complete.flag"
 if [ -f "$SENTINEL" ]; then
     log "Shutdown.exe completed cleanly (sentinel present)"
-    rm -f "$SENTINEL"
+    run rm -f "$SENTINEL"
 else
     log "WARN: $SENTINEL missing — Shutdown.exe may not have completed"
 fi
@@ -234,17 +271,17 @@ if [ -f "$CANARY_FLAG" ]; then
     log "RANSOMWARE_INDICATOR  Shutdown.exe reported canary tampering:"
     while read -r line; do log "    $line"; done < "$CANARY_FLAG"
     SUSPICIOUS_SESSION=1
-    rm -f "$CANARY_FLAG"
+    run rm -f "$CANARY_FLAG"
 fi
 if [ "$SUSPICIOUS_SESSION" -eq 1 ]; then
     log "WARN: dirty session flagged SUSPICIOUS; suppressing restore for this cycle"
     log "WARN: encrypted/suspicious files preserved in archive but NOT propagated"
-    rm -f "$DEST_DIR/dir_desc.txt"
+    run rm -f "$DEST_DIR/dir_desc.txt"
 fi
 
 # 3. Clean VM — Boot.exe restores files, then shuts itself off
 log "Starting $CLEAN_VM"
-if ! VBoxManage startvm "$CLEAN_VM" >>"$LOG_FILE" 2>&1; then
+if ! run VBoxManage startvm "$CLEAN_VM"; then
     log "ERROR: could not start $CLEAN_VM; user files may be stranded in $DEST_DIR"
     archive_dest
     exit 1
@@ -258,47 +295,54 @@ wait_for_vm_off "$CLEAN_VM"
 log "Replacing dirty VHD via clone-then-rename"
 NEW_VHD="${DIRTY_VHD%.vhd}.new.vhd"
 
-# Detach the existing dirty VHD first so VirtualBox releases its lock
-VBoxManage storageattach "$DIRTY_VM" \
-    --storagectl "$STORAGE_CTL" --port "$PORT" --medium none \
-    >>"$LOG_FILE" 2>&1 \
-    || log "WARN: storageattach detach failed (may already be detached)"
-
-if [ -f "$NEW_VHD" ]; then
-    rm -f "$NEW_VHD"
-    VBoxManage closemedium disk "$NEW_VHD" --delete >>"$LOG_FILE" 2>&1 || true
-fi
-
-if ! VBoxManage clonemedium "$CLEAN_VHD" "$NEW_VHD" --format VHD \
-        >>"$LOG_FILE" 2>&1; then
-    log "ERROR: clonemedium failed; leaving existing $DIRTY_VHD in place"
-    # Re-attach the existing (still-good) dirty VHD so the next cycle works.
-    VBoxManage storageattach "$DIRTY_VM" \
-        --storagectl "$STORAGE_CTL" --port "$PORT" \
-        --type HDD --medium "$DIRTY_VHD" \
-        >>"$LOG_FILE" 2>&1 \
-        || log "ERROR: also failed to re-attach $DIRTY_VHD"
-    exit 1
-fi
-
-# Clone succeeded. Now swap.
-OLD_VHD="${DIRTY_VHD%.vhd}.old.vhd"
-mv -f "$DIRTY_VHD" "$OLD_VHD" 2>/dev/null || true
-if mv -f "$NEW_VHD" "$DIRTY_VHD"; then
-    # Tell VirtualBox the disk identity changed
-    VBoxManage closemedium disk "$OLD_VHD" --delete >>"$LOG_FILE" 2>&1 || true
-    rm -f "$OLD_VHD"
+if [ "$DRY_RUN" -eq 1 ]; then
+    log "DRY-RUN  would detach $DIRTY_VHD from $DIRTY_VM"
+    log "DRY-RUN  would clonemedium $CLEAN_VHD -> $NEW_VHD (--format VHD)"
+    log "DRY-RUN  would mv $DIRTY_VHD aside, mv $NEW_VHD into place"
+    log "DRY-RUN  would re-attach swapped $DIRTY_VHD to $DIRTY_VM"
 else
-    log "ERROR: swap failed; restoring previous dirty VHD"
-    mv -f "$OLD_VHD" "$DIRTY_VHD"
-    exit 1
-fi
+    # Detach the existing dirty VHD first so VirtualBox releases its lock
+    VBoxManage storageattach "$DIRTY_VM" \
+        --storagectl "$STORAGE_CTL" --port "$PORT" --medium none \
+        >>"$LOG_FILE" 2>&1 \
+        || log "WARN: storageattach detach failed (may already be detached)"
 
-if ! VBoxManage storageattach "$DIRTY_VM" \
-        --storagectl "$STORAGE_CTL" --port "$PORT" \
-        --type HDD --medium "$DIRTY_VHD" \
-        >>"$LOG_FILE" 2>&1; then
-    die "could not re-attach swapped $DIRTY_VHD; manual recovery needed"
+    if [ -f "$NEW_VHD" ]; then
+        rm -f "$NEW_VHD"
+        VBoxManage closemedium disk "$NEW_VHD" --delete >>"$LOG_FILE" 2>&1 || true
+    fi
+
+    if ! VBoxManage clonemedium "$CLEAN_VHD" "$NEW_VHD" --format VHD \
+            >>"$LOG_FILE" 2>&1; then
+        log "ERROR: clonemedium failed; leaving existing $DIRTY_VHD in place"
+        # Re-attach the existing (still-good) dirty VHD so the next cycle works.
+        VBoxManage storageattach "$DIRTY_VM" \
+            --storagectl "$STORAGE_CTL" --port "$PORT" \
+            --type HDD --medium "$DIRTY_VHD" \
+            >>"$LOG_FILE" 2>&1 \
+            || log "ERROR: also failed to re-attach $DIRTY_VHD"
+        exit 1
+    fi
+
+    # Clone succeeded. Now swap.
+    OLD_VHD="${DIRTY_VHD%.vhd}.old.vhd"
+    mv -f "$DIRTY_VHD" "$OLD_VHD" 2>/dev/null || true
+    if mv -f "$NEW_VHD" "$DIRTY_VHD"; then
+        # Tell VirtualBox the disk identity changed
+        VBoxManage closemedium disk "$OLD_VHD" --delete >>"$LOG_FILE" 2>&1 || true
+        rm -f "$OLD_VHD"
+    else
+        log "ERROR: swap failed; restoring previous dirty VHD"
+        mv -f "$OLD_VHD" "$DIRTY_VHD"
+        exit 1
+    fi
+
+    if ! VBoxManage storageattach "$DIRTY_VM" \
+            --storagectl "$STORAGE_CTL" --port "$PORT" \
+            --type HDD --medium "$DIRTY_VHD" \
+            >>"$LOG_FILE" 2>&1; then
+        die "could not re-attach swapped $DIRTY_VHD; manual recovery needed"
+    fi
 fi
 
 # 5. Archive the shared-folder transit dir for admin rollback. If the
