@@ -401,8 +401,38 @@ the VM. Useful commands:
 osr-status                                    # one-page health summary
 tail -f ~kiosk/osr-host.log                   # live log of host.sh
 sudo cat /home/kiosk/dest/shutdown.log        # last shutdown's log
-ls -la /home/kiosk/osr-archive/               # archived sessions
+ls -la ~kiosk/osr-archive/                    # archived sessions
 ```
+
+### Validating without committing to a real cycle
+
+Two scripts let you verify host.sh's wiring before trusting it with
+a real Dirty VHD:
+
+- **`DRY_RUN=1`** in front of `host.sh` runs every read-only step
+  (sentinel check, ransomware scan, canary-flag check) live, but
+  logs every state-changing action ("DRY-RUN  would execute: ...")
+  instead of actually running it. No VMs start, no disks swap,
+  no files move.
+
+  ```bash
+  sudo -u kiosk DRY_RUN=1 /opt/osr/engine/host.sh
+  ```
+
+  Useful for: verifying paths and VM names point at the right
+  resources, confirming the scanner sees the dest directory you
+  think it does, dry-running the cycle right after setup before
+  trusting it with real data.
+
+- **`engine/test-cycle.sh`** runs a self-contained sandbox under
+  `/tmp/osr-test.XXXXXX/` that exercises the scanner, archive,
+  and prune logic end-to-end without VirtualBox. Useful when
+  modifying host.sh — run it to confirm changes don't regress
+  existing behavior.
+
+  ```bash
+  bash /opt/osr/engine/test-cycle.sh
+  ```
 
 ## 9. Turn on the kiosk loop
 

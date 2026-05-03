@@ -223,6 +223,13 @@ scan_for_ransomware_signs() {
     [ "$hits" -eq 0 ]
 }
 
+# Allow this file to be sourced as a library by test-cycle.sh and similar.
+# When sourced, only the env-var defaults and function definitions are
+# wanted; the main cycle flow below should be skipped.
+if [ "${BASH_SOURCE[0]}" != "${0}" ]; then
+    return 0
+fi
+
 mkdir -p "$(dirname "$LOG_FILE")"
 log "=== cycle start (DIRTY=$DIRTY_VM, CLEAN=$CLEAN_VM) ==="
 if [ "$DRY_RUN" -eq 1 ]; then
