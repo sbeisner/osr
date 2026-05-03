@@ -518,6 +518,16 @@ For customers with multiple kiosks that need to see each other (rare —
 each machine is meant to be self-contained), use NAT-Network mode and
 configure a shared NAT-Network in VirtualBox. Do not use bridged.
 
+## Deploying multiple machines
+
+This guide walks through one machine end-to-end. For three or more
+machines (a library, a nursing home, a community-center bank of
+public terminals), follow this guide once to build "the master"
+machine, then use `docs/master-image-workflow.md` to image its disk
+and restore that image to each additional machine. The Nth machine
+takes ~30 minutes of mostly-waiting-on-disk-imaging instead of the
+~3 hours of focused work this guide describes.
+
 ## What's still missing for paid customers
 
 `host.sh` is config-driven (env vars at the top), logs to
@@ -531,8 +541,8 @@ the `osr-status` health check.
 
 What's still blocking a paid deploy is documented in detail in
 `../HANDOFF.md` under "Before deploying to real users" — the headline
-remaining items being: master-image clone workflow for multi-machine
-deploys, fleet-update story, license-model decision, and a couple of
-design-level items (read-only host-side mount during user sessions,
-VSS for locked Outlook .pst files).
+remaining items being: a fleet-update story (push Clean VM updates to
+deployed machines without on-site visits), license-model decision, and
+a couple of design-level items (read-only host-side mount during user
+sessions, VSS for locked Outlook .pst files).
 

@@ -18,8 +18,9 @@ If you want to advance this project, the highest-value path is probably:
 2. Address the security and design issues called out below before any
    real-user deployment (the items under "Before deploying to real
    users").
-3. Build the master-image cloning workflow so per-machine deploy time
-   drops from hours to minutes.
+3. Build a fleet-update mechanism (push Clean VHDs to deployed
+   machines remotely, with staged rollout and rollback) so updates
+   don't require on-site visits.
 
 ## Origins / what was removed
 
@@ -224,27 +225,23 @@ as gating items for paid customers, not for a friendly soak deployment.
 
 ### Deployment-at-scale
 
-For a single-installer-on-many-machines scenario (one library,
-one nursing home), the current setup process is approximately
-2–3 hours per machine, on-site. This does not scale: a 20-machine
-deployment is a person-week.
+7. **Master-image clone workflow: in place.** `engine/generalize-host.sh`
+   strips per-machine identity (machine-id, SSH host keys, Tailscale
+   auth, logs, archive history) from a configured master so its disk
+   can be imaged. `engine/finalize-machine.sh` regenerates identity
+   on first boot of a cloned machine, gated by a marker file and a
+   systemd oneshot service (`osr-finalize.service`). The full
+   procedure — including Sysprep'ing the Clean VM and supplying an
+   `unattend.xml` so cloned Windows installs run OOBE non-interactively
+   — is documented in `docs/master-image-workflow.md`. Brings the
+   per-additional-machine cost from ~3 hours to ~30 minutes
+   (mostly waiting on disk imaging).
 
-7. **Build a master-image clone workflow.** The realistic answer is:
-   set up one machine end-to-end, image its drive (Clonezilla or
-   `dd`), restore the image to each additional machine's drive,
-   then run a per-machine `finalize-machine.sh` first-boot script
-   that:
-   - regenerates SSH host keys
-   - regenerates `/etc/machine-id`
-   - sets a unique hostname (e.g. derived from MAC)
-   - re-runs `sysprep /generalize` inside the Clean VM and triggers
-     a fresh Windows OOBE / activation pass
-   - prompts the installer for Wi-Fi credentials and customer-specific
-     config (printer drivers, etc.)
-
-   None of this exists today. It is roughly 1–2 weeks of focused
-   work; it transforms 20-machine deploys from a person-week to a
-   person-day.
+   Open follow-on work that would simplify this further: a curated
+   `unattend.xml` template in the repo (currently the deployer
+   generates one with Microsoft's SIM tool); a Tailscale auth-key
+   integration so cloned machines auto-join the tailnet without an
+   operator-typed browser flow.
 
 8. **License model.** OEM Windows licenses are tied to the original
    hardware; cloning a Sysprepped image to fresh hardware needs

@@ -127,14 +127,22 @@ ENGINE_DST=/opt/osr/engine
 echo "[*] Installing engine scripts to $ENGINE_DST"
 mkdir -p "$ENGINE_DST"
 SRC_DIR="$(dirname "$(readlink -f "$0")")"
-install -m 0755 "$SRC_DIR/host.sh"           "$ENGINE_DST/host.sh"
-install -m 0755 "$SRC_DIR/kiosk-loop.sh"     "$ENGINE_DST/kiosk-loop.sh"
-install -m 0755 "$SRC_DIR/osr-status.sh"     "$ENGINE_DST/osr-status.sh"
+install -m 0755 "$SRC_DIR/host.sh"               "$ENGINE_DST/host.sh"
+install -m 0755 "$SRC_DIR/kiosk-loop.sh"         "$ENGINE_DST/kiosk-loop.sh"
+install -m 0755 "$SRC_DIR/osr-status.sh"         "$ENGINE_DST/osr-status.sh"
+install -m 0755 "$SRC_DIR/test-cycle.sh"         "$ENGINE_DST/test-cycle.sh"
+# Master-image cloning support
+install -m 0755 "$SRC_DIR/generalize-host.sh"    "$ENGINE_DST/generalize-host.sh"
+install -m 0755 "$SRC_DIR/finalize-machine.sh"   "$ENGINE_DST/finalize-machine.sh"
+install -m 0644 "$SRC_DIR/osr-finalize.service"  /etc/systemd/system/osr-finalize.service
+systemctl daemon-reload
+# The service is gated on /etc/osr-image-pending-finalize and is enabled
+# at master-generalization time, not now — no-op to enable it here.
 # Inside-the-VM helpers — copied to a path the deployer can grab from
 # the Linux host (or, equivalently, just from the github repo on a USB
 # stick). Stored alongside the engine for discoverability.
-install -m 0644 "$SRC_DIR/prepare-clean-vm.ps1" "$ENGINE_DST/prepare-clean-vm.ps1"
-install -m 0644 "$SRC_DIR/prepare-dirty-vm.ps1" "$ENGINE_DST/prepare-dirty-vm.ps1"
+install -m 0644 "$SRC_DIR/prepare-clean-vm.ps1"  "$ENGINE_DST/prepare-clean-vm.ps1"
+install -m 0644 "$SRC_DIR/prepare-dirty-vm.ps1"  "$ENGINE_DST/prepare-dirty-vm.ps1"
 # Symlink so admins reaching the host via Tailscale SSH can just type
 # `osr-status` without remembering the install path.
 ln -sf "$ENGINE_DST/osr-status.sh" /usr/local/bin/osr-status

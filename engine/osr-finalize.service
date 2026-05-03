@@ -1,0 +1,16 @@
+[Unit]
+Description=OSR per-machine finalization (runs once after master-image clone)
+Documentation=https://github.com/sbeisner/osr/blob/main/docs/master-image-workflow.md
+ConditionPathExists=/etc/osr-image-pending-finalize
+After=network-online.target systemd-machined.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/osr/engine/finalize-machine.sh
+RemainAfterExit=no
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target

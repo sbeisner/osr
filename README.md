@@ -36,6 +36,9 @@ The single most important entry points for the next maintainer:
 - **`docs/ransomware-defense.md`** — threat model, defense-in-depth
   strategy, what's implemented, and what's deferred. Read this before
   any conversation with a customer about whether OSR "stops ransomware."
+- **`docs/master-image-workflow.md`** — how to deploy OSR to N
+  machines without redoing the setup procedure on each one. Build
+  one master, image its disk, restore to each additional target.
 
 ## What works today
 
