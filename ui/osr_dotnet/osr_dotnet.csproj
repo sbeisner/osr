@@ -44,12 +44,6 @@
     <Reference Include="BCrypt.Net-Next">
       <HintPath>..\packages\BCrypt.Net-Next.4.0.3\lib\netstandard2.0\BCrypt.Net-Next.dll</HintPath>
     </Reference>
-    <Reference Include="DiscUtils, Version=0.11.0.0, Culture=neutral, processorArchitecture=MSIL">
-      <HintPath>..\packages\Discutils.0.11.0.2\lib\net40\DiscUtils.dll</HintPath>
-    </Reference>
-    <Reference Include="DiscUtils.Common, Version=0.11.0.0, Culture=neutral, processorArchitecture=MSIL">
-      <HintPath>..\packages\Discutils.0.11.0.2\lib\net40\DiscUtils.Common.dll</HintPath>
-    </Reference>
     <Reference Include="DotNetZip, Version=1.15.0.0, Culture=neutral, PublicKeyToken=6583c7c814667745, processorArchitecture=MSIL">
       <HintPath>..\packages\DotNetZip.1.15.0\lib\net40\DotNetZip.dll</HintPath>
     </Reference>
@@ -130,7 +124,6 @@
       <SubType>Designer</SubType>
     </ApplicationDefinition>
     <Compile Include="Controllers\LocalUserStore.cs" />
-    <Compile Include="Controllers\DiscUtilsController.cs" />
     <Compile Include="Controllers\FileSystemController.cs" />
     <Compile Include="Views\Configure.xaml.cs">
       <DependentUpon>Configure.xaml</DependentUpon>

@@ -1,0 +1,37 @@
+{% extends "_layout.html" %}
+{% block title %}OSR — Whitelist{% endblock %}
+{% block content %}
+<h1>Whitelist</h1>
+<p class="hint">
+  One absolute Windows path per line, e.g. <code>C:\Users\you\Documents</code>.
+  Blank lines and lines beginning with <code>#</code> are preserved as comments.
+  This file is read by <code>host.sh</code> at the start of each cycle and
+  copied into the Dirty VM's shared folder for <code>shutdown.exe</code>.
+</p>
+
+{% if saved %}
+  <div class="alert alert-ok">Saved to <code>{{ path }}</code>.</div>
+{% endif %}
+
+{% if errors %}
+  <div class="alert alert-bad">
+    <strong>Refusing to save — fix the following:</strong>
+    <ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul>
+  </div>
+{% endif %}
+
+{% if warnings %}
+  <div class="alert alert-warn">
+    <strong>Saved with warnings:</strong>
+    <ul>{% for w in warnings %}<li>{{ w }}</li>{% endfor %}</ul>
+  </div>
+{% endif %}
+
+<form method="post" action="{{ url_for('whitelist_save') }}">
+  <textarea name="whitelist" rows="20" spellcheck="false" autofocus>{{ whitelist_text }}</textarea>
+  <div class="actions">
+    <button type="submit">Save</button>
+    <span class="path-note">→ <code>{{ path }}</code></span>
+  </div>
+</form>
+{% endblock %}

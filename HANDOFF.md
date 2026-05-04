@@ -6,15 +6,22 @@ suggested order of work — not a sales pitch.
 
 ## Bottom line
 
-The `engine/` directory contains a working prototype of the core concept.
-The `ui/` directory contains the start of a productized WPF app on top of
-that concept; it builds and runs out of the box (no cloud dependency) but
-the ISO builder and the post-setup configuration screen are unfinished.
+- `engine/` — working prototype of the core concept.
+- `host-ui/` — Flask admin UI on the Linux host (status, whitelist editor,
+  log viewer), reachable via the host's Tailscale tailnet. Replaces the
+  in-VM WPF approach. Phase-1 scaffold is done; remaining wire-up is
+  documented in tasks below.
+- `ui/` — original WPF productization. Preserved as a reference for the
+  user-facing surface (login flow, whitelist editor, snapshot trigger)
+  while `host-ui/` is being built out. Will be deleted once `host-ui/`
+  has run a real cycle end-to-end on a deployed host.
 
-If you want to advance this project, the highest-value path is probably:
-1. Decide what role the `ui/` codebase plays alongside the engine, and
-   wire the two together so the UI's whitelist drives Shutdown.exe's
-   copy step.
+If you want to advance this project, the highest-value path is:
+1. Land the remaining `host-ui/` wire-up: modify `pbosr/shutdown.cpp`
+   to read the host-staged whitelist from `\\VBoxSvr\dest\whitelist.txt`
+   in preference to its hardcoded `generate_whitelist()`; wire
+   `setup-host.sh` to install the venv + systemd unit + `~/osr-config`
+   directory; `tailscale serve` the UI onto the tailnet.
 2. Address the security and design issues called out below before any
    real-user deployment (the items under "Before deploying to real
    users").
@@ -100,10 +107,52 @@ each top-level entry of the transit dir, so subdirectory structure is
 preserved. Mentioning here so a future reader who sees the old claim in
 git history doesn't go chasing a phantom bug.
 
-### `ui/osr_dotnet/` — WPF configurator
+### `host-ui/` — Linux-host admin UI (Flask)
 
-Status: **builds, runs, partial functionality**. No external service
-dependencies.
+Status: **scaffold done, file contract established with engine, not yet
+deployed end-to-end**. Replaces the in-VM WPF configurator (see below).
+See `docs/host-ui-plan.md` for design rationale and `host-ui/README.md`
+for layout and deploy steps.
+
+What works:
+
+- Flask app under gunicorn-via-systemd. Auth via Tailscale identity
+  headers (`Tailscale-User-Login` etc.). Refuses any request missing
+  the headers — the only ingress path is `tailscale serve` →
+  `127.0.0.1:8080`.
+- Status page reads `~/osr-host.log` for cycle markers + recent
+  ransomware indicators, and `~/osr-archive/` for retained-session
+  count + SUSPICIOUS-marked sessions. Detects an in-flight cycle
+  (cycle-start without a matching cycle-complete in the tail).
+- Whitelist editor reads/writes `~/osr-config/whitelist.txt` with
+  validation (rejects `..` traversal and non-Windows-path entries;
+  warns on non-`C:\` drives). Atomic write via temp + `os.replace`.
+- Log viewer tails `~/osr-host.log` (configurable line count via `?n=`),
+  color-codes RANSOMWARE_INDICATOR / WARN / ERROR / FATAL.
+- `engine/host.sh` reads `WHITELIST_FILE` (default
+  `~/osr-config/whitelist.txt`) and stages it into
+  `$DEST_DIR/whitelist.txt` at the start of each cycle.
+  `engine/test-cycle.sh` still passes.
+
+What is broken or missing:
+
+- **`shutdown.cpp` does not yet read the staged whitelist.** The C++
+  binary still calls `generate_whitelist()` to build a hardcoded list.
+  Until `shutdown.cpp` is changed to read `\\VBoxSvr\dest\whitelist.txt`
+  in preference, the file the UI writes is staged but ignored. Tracked
+  as a separate task — needs a Windows VS box to recompile.
+- **`setup-host.sh` does not yet install the venv or the systemd unit.**
+  Today, deployers must follow the manual steps in `host-ui/README.md`.
+- **No production HTTPS yet.** Plan is `tailscale serve --https=443
+  http://127.0.0.1:8080`. Not wired into setup-host.sh.
+
+### `ui/osr_dotnet/` — WPF configurator (legacy, slated for removal)
+
+Status: **builds, runs, partial functionality, replaced by `host-ui/`
+in plan**. No external service dependencies. Preserved as a reference
+for the user-facing surface (login → SelectUser → FirstTimeSetup →
+Configure) until `host-ui/` is proven end-to-end on a deployed host;
+will be deleted in a follow-up commit at that point.
 
 What works:
 
@@ -130,13 +179,13 @@ What works:
 
 What is broken or missing:
 
-- **`DiscUtilsController` is a stub.** The `DiscUtils` NuGet dependency
-  was pulled in for building clean ISO images — the eventual idea being
-  that OSR could deploy on bare metal without VirtualBox. Only the
-  `CDBuilder` constructor is wired; no file enumeration, no ISO write.
-  *Read `docs/why-not-winpe.md` before pursuing this — the same
-  Microsoft-patch-cadence problems that killed the WindowsPE-imaging
-  approach apply here, and DiscUtils-built ISOs hit them too.*
+- (Removed: `DiscUtilsController` was a stub for building clean ISO
+  images so OSR could eventually deploy on bare metal without VirtualBox.
+  Deleted because the same Microsoft patch-cadence problems that killed
+  the WindowsPE-imaging direction — see `docs/why-not-winpe.md` —
+  apply equally to DiscUtils-built ISOs. The `Discutils` NuGet package
+  and the controller file have been removed; `DotNetZip` stays in the
+  package set since `FileSystemController` uses `System.IO.Compression`.)
 - **Password hashing now uses bcrypt** (`BCrypt.Net-Next` 4.0.3, default
   work factor 11). `AccountCreate` hashes on create; `LocalUserStore.QueryUsersAsync`
   verifies on lookup, with a one-shot auto-migration path for any plaintext
@@ -151,18 +200,25 @@ What is broken or missing:
   produces a local zip, while the engine's `\\VBoxSvr\dest` shared-folder
   workflow is its own thing. Decide what role the UI plays before
   wiring them together.
-- **`Microsoft.WindowsAPICodePack`** dependency may be hard to restore
-  from modern NuGet feeds; the official package was unlisted years ago.
-  Community-maintained forks exist.
+- **`Microsoft.WindowsAPICodePack`**: the original Microsoft package was
+  unlisted from NuGet years ago, so `packages.config` references the
+  community-maintained `Microsoft.WindowsAPICodePack-Core` and
+  `-Shell` forks (still on NuGet, drop-in compatible — the assembly
+  names `Microsoft.WindowsAPICodePack` and `.Shell` are unchanged, so
+  the .csproj `Reference` entries didn't need to change). The only
+  consumer is the folder-picker dialog in `FirstTimeSetup.xaml.cs`.
 - (Removed: `RhinoCommon` and `Eto` were dragged into `packages.config`
   and the .csproj years ago, never used by any code, and broke the build
   for anyone who couldn't restore the package. Cleaned out.)
 - No tests, no input validation on the AccountCreate form beyond
   empty-field and password-match checks.
-- `async void` in event handlers swallows exceptions silently (deliberate
-  in the WPF event-handler model, but the chained helpers — `setUserDir`,
-  `setWhitelist`, `finishUserInitialization` — could become `Task`-returning
-  to give callers the option to await).
+- Top-level WPF event handlers remain `async void` (the WPF event-handler
+  model requires this — converting them swallows the binding). The
+  chained helpers `setUserDir`, `setWhitelist`, and `finishUserInitialization`
+  on `MainWindow` are now `async Task` so their callers can await them
+  rather than fire-and-forget; `Save_Whitelist` and `Button_Click`
+  awaits each call in turn so the navigation does not race the user-store
+  write.
 
 ## Before deploying to real users
 
@@ -279,20 +335,27 @@ as gating items for paid customers, not for a friendly soak deployment.
 
 ## Suggested next steps, in priority order
 
-1. **Wire the UI to the engine.** The two halves currently know nothing
-   about each other. The most natural integration: the WPF
-   `Configure.xaml` "Run Update" button shells out to the `engine/pbosr`
-   shutdown binary with a path to the user's whitelist file.
-   `FirstTimeSetup` already produces something close to that whitelist
-   shape; it just doesn't write it where the engine looks.
+1. **Wire `shutdown.cpp` to read the staged whitelist.** Modify
+   `pbosr/shutdown.cpp::generate_whitelist()` to first try opening
+   `\\VBoxSvr\dest\whitelist.txt`; if present, copy its contents into
+   the working-dir `whitelist.txt` and return. Fall back to the existing
+   hardcoded enumeration only if the staged file is absent or empty.
+   Recompile in VS, redeploy. This is the last piece needed to make the
+   `host-ui/` whitelist editor actually drive the cycle.
 
-2. **Replace remaining hardcoded paths in the C++ side** —
-   `\\VBoxSvr\dest`, the whitelist contents in `generate_whitelist()`,
-   the per-customer shutdown command. Pull into a config file or
-   command-line args before shipping to a second customer. (`host.sh`
-   on the Linux side is already env-driven; the C++ binaries are not.)
+2. **Integrate `host-ui/` install into `setup-host.sh`.** Today
+   `setup-host.sh` does not install the venv, the systemd unit, or
+   create `~/osr-config`. Until it does, `host-ui/README.md` documents
+   the manual steps. Pair this with a `tailscale serve` line so the UI
+   is reachable on the tailnet on first boot.
 
-3. **Resist the temptation to revisit WindowsPE-style imaging.** It will
+3. **Replace remaining hardcoded paths in the C++ side** —
+   `\\VBoxSvr\dest`, the per-customer shutdown command. Pull into a
+   config file or command-line args before shipping to a second
+   customer. (`host.sh` on the Linux side is already env-driven; the
+   C++ binaries are not.)
+
+4. **Resist the temptation to revisit WindowsPE-style imaging.** It will
    feel like the obvious next architectural improvement — bare metal,
    no VirtualBox layer, native performance. `docs/why-not-winpe.md`
    walks through why it was prototyped and rejected, with specific

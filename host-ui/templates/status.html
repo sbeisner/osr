@@ -1,0 +1,87 @@
+{% extends "_layout.html" %}
+{% block title %}OSR — Status{% endblock %}
+{% block content %}
+<h1>Status</h1>
+
+<section class="card">
+  <h2>Cycle</h2>
+  <dl>
+    <dt>Last cycle outcome</dt>
+    <dd>
+      {% if snapshot.cycle.last_outcome == "running" %}
+        <span class="badge badge-running">running</span>
+      {% elif snapshot.cycle.last_outcome == "complete" %}
+        <span class="badge badge-ok">complete</span>
+      {% else %}
+        <span class="badge badge-unknown">no cycle yet</span>
+      {% endif %}
+    </dd>
+
+    <dt>Recent ransomware indicator?</dt>
+    <dd>
+      {% if snapshot.cycle.suspicious_recent %}
+        <span class="badge badge-bad">YES — see log</span>
+      {% else %}
+        <span class="badge badge-ok">no</span>
+      {% endif %}
+    </dd>
+
+    <dt>Canary failure flag pending?</dt>
+    <dd>
+      {% if snapshot.cycle.canary_failure_present %}
+        <span class="badge badge-bad">YES — Shutdown.exe reported tampering</span>
+      {% else %}
+        <span class="badge badge-ok">no</span>
+      {% endif %}
+    </dd>
+
+    {% if snapshot.cycle.last_start %}
+      <dt>Last start line</dt>
+      <dd><code>{{ snapshot.cycle.last_start }}</code></dd>
+    {% endif %}
+    {% if snapshot.cycle.last_complete %}
+      <dt>Last complete line</dt>
+      <dd><code>{{ snapshot.cycle.last_complete }}</code></dd>
+    {% endif %}
+  </dl>
+</section>
+
+<section class="card">
+  <h2>Archive</h2>
+  <dl>
+    <dt>Past sessions retained</dt>
+    <dd>{{ snapshot.archive.total }}</dd>
+
+    <dt>Sessions flagged SUSPICIOUS</dt>
+    <dd>
+      {% if snapshot.archive.suspicious %}
+        <span class="badge badge-bad">{{ snapshot.archive.suspicious }}</span>
+      {% else %}
+        0
+      {% endif %}
+    </dd>
+
+    <dt>Most recent archive timestamp</dt>
+    <dd>{{ snapshot.archive.latest or "—" }}</dd>
+
+    <dt>Free disk under archive dir</dt>
+    <dd>
+      {% if snapshot.archive.free_bytes is not none %}
+        {{ "%.1f"|format(snapshot.archive.free_bytes / (1024*1024*1024)) }} GiB
+      {% else %}
+        unknown
+      {% endif %}
+    </dd>
+  </dl>
+</section>
+
+<section class="card">
+  <h2>Paths</h2>
+  <dl>
+    <dt>Host log</dt>
+    <dd><code>{{ snapshot.host_log_path }}</code></dd>
+    <dt>Archive directory</dt>
+    <dd><code>{{ snapshot.archive_dir_path }}</code></dd>
+  </dl>
+</section>
+{% endblock %}

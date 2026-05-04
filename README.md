@@ -16,12 +16,16 @@ osr/
 ├── engine/         Working VirtualBox-based "swap a clean VHD over the
 │                   dirty one on shutdown" implementation. C++ + a Linux
 │                   host orchestrator + a one-shot host-setup script.
-│                   This is the only end-to-end working version.
-├── ui/             WPF configurator/account UI written for a later, more
-│                   ambitious version of the product. Builds and runs
-│                   locally; partially functional. See ui/README.md.
+├── host-ui/        Flask admin UI served on the Linux host's Tailscale
+│                   tailnet IP. Whitelist editor, status page, log
+│                   viewer. Replaces the in-VM WPF configurator. See
+│                   docs/host-ui-plan.md for rationale.
+├── ui/             Legacy WPF configurator/account UI. Preserved as
+│                   reference until host-ui/ is proven end-to-end on a
+│                   deployed host, then deleted. See ui/README.md.
 └── docs/           Architecture decisions and rationale documents,
-                    e.g. why the WindowsPE approach was rejected.
+                    e.g. why the WindowsPE approach was rejected and
+                    the host-ui design plan.
 ```
 
 The single most important entry points for the next maintainer:
@@ -71,16 +75,17 @@ and Windows install).
 
 The `ui/` directory is a WPF (Windows Presentation Foundation) desktop app
 that was the start of a more ambitious productized version: per-user
-accounts, license tracking, a configurable whitelist, and a plan to build
-clean ISO images via the `DiscUtils` library so the system would not depend
-on VirtualBox.
+accounts, license tracking, and a configurable whitelist.
 
 The UI **builds and runs with no cloud dependency** — users persist to a
 local JSON file at `%LOCALAPPDATA%\osr\users.json`. You can create accounts,
-log in, and configure a whitelist. The two pieces that are still incomplete:
-`DiscUtilsController` is a stub (the actual ISO-build logic was never
-written) and `Configure.xaml.cs` is empty (the post-setup screen never got
-wired up). See `ui/README.md` and `HANDOFF.md` for the full state.
+log in, and configure a whitelist. It is not currently wired to the
+`engine/` code: the WPF "Run Update" button writes a snapshot zip to
+`%LOCALAPPDATA%\osr\` while the engine does its own copy via the
+`\\VBoxSvr\dest` shared folder. See `ui/README.md` and `HANDOFF.md` for
+the full state — including the architectural argument that the
+configuration UI belongs on the Linux host (as a small web app served
+on the tailnet), not inside the disposable Windows VM.
 
 ## Project history
 
@@ -93,7 +98,7 @@ This repo is a consolidation of multiple earlier prototype repos:
 | `pbosr_windows_sdk`  | VS port of `proactive_backup`               | Incomplete          |
 | `os_refresh`         | VirtualBox VM swap                          | **Worked end-to-end → `engine/`** |
 | `filesystem_refresh` | ASP.NET Core + Angular                      | Mostly scaffolding  |
-| `osr_dotnet`         | WPF + Azure Cosmos + DiscUtils ISO builder  | **Best UI direction → `ui/`**    |
+| `osr_dotnet`         | WPF + Azure Cosmos + DiscUtils ISO builder  | UI shape preserved as `ui/`; Cosmos and DiscUtils removed; in-VM WPF likely to be replaced by a host-side web UI |
 
 The two preserved code paths represent the two strongest directions: the
 working VBox swap, and the WPF productization that was meant to replace it.

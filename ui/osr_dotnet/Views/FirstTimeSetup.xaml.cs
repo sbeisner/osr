@@ -57,8 +57,8 @@ namespace osr_dotnet.Views
             {
                 whitelist += dir + "\n";
             });
-            window.setWhitelist(whitelist);
-            window.finishUserInitialization();
+            await window.setWhitelist(whitelist);
+            await window.finishUserInitialization();
             await window.initZip();
             this.NavigationService.Navigate(new Configure());
         }

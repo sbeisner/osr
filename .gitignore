@@ -45,3 +45,6 @@ Thumbs.db
 
 # Local config (must NOT contain real Cosmos credentials before commit)
 **/App.Local.config
+
+# Claude Code session state — local to each developer's machine
+.claude/

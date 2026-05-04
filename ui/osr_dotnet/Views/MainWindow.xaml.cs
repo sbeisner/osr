@@ -97,19 +97,19 @@ namespace osr_dotnet.Views
             return activeUser;
         }
 
-        public async void setUserDir(string dir)
+        public async Task setUserDir(string dir)
         {
             activeUser.TrackedDir = dir;
             await userStore.UpdateUser(activeUser);
         }
 
-        public async void setWhitelist(string whitelist)
+        public async Task setWhitelist(string whitelist)
         {
             activeUser.Whitelist = whitelist;
             await userStore.UpdateUser(activeUser);
         }
 
-        public async void finishUserInitialization()
+        public async Task finishUserInitialization()
         {
             activeUser.IsInitialized = "true";
             await userStore.UpdateUser(activeUser);

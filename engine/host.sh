@@ -29,6 +29,13 @@
 #   MAX_WAIT_SEC           Max seconds to wait for a VM to power off
 #                          before forcibly killing it (default 1800)
 #   LOG_FILE               Where to log (default ~/osr-host.log)
+#   WHITELIST_FILE         Optional. Host-side whitelist managed by the
+#                          host-ui Flask app (default ~/osr-config/whitelist.txt).
+#                          If present, copied into $DEST_DIR/whitelist.txt
+#                          at the start of each cycle so shutdown.exe
+#                          uses it in preference to its hardcoded
+#                          generate_whitelist() defaults. Absent file is
+#                          fine — engine falls back to the defaults.
 #   DRY_RUN                If 1, log every state-changing action but skip
 #                          the actual VM start/swap/mv calls. The
 #                          ransomware scanner and canary check still run
@@ -51,6 +58,7 @@ ARCHIVE_KEEP=${ARCHIVE_KEEP:-7}
 POLL_INTERVAL_SEC=${POLL_INTERVAL_SEC:-5}
 MAX_WAIT_SEC=${MAX_WAIT_SEC:-1800}
 LOG_FILE=${LOG_FILE:-$HOME/osr-host.log}
+WHITELIST_FILE=${WHITELIST_FILE:-$HOME/osr-config/whitelist.txt}
 DRY_RUN=${DRY_RUN:-0}
 
 log() {
@@ -236,6 +244,25 @@ if [ "$DRY_RUN" -eq 1 ]; then
     log "DRY-RUN  state-changing actions will be logged but skipped"
     log "DRY-RUN  read-only steps (sentinel check, ransomware scan, canary"
     log "DRY-RUN  flag check) DO run so wiring can be validated"
+fi
+
+# Stage the host-side whitelist (managed by host-ui) into the shared
+# folder so shutdown.exe picks it up. Absence is non-fatal — shutdown.exe
+# falls back to its hardcoded generate_whitelist() in that case, which
+# matches the engine's pre-host-ui behavior.
+if [ -f "$WHITELIST_FILE" ]; then
+    if [ "$DRY_RUN" -eq 1 ]; then
+        log "DRY-RUN  would copy $WHITELIST_FILE -> $DEST_DIR/whitelist.txt"
+    else
+        mkdir -p "$DEST_DIR"
+        if cp "$WHITELIST_FILE" "$DEST_DIR/whitelist.txt"; then
+            log "Staged host-side whitelist ($WHITELIST_FILE) into $DEST_DIR/whitelist.txt"
+        else
+            log "WARN: could not copy $WHITELIST_FILE to $DEST_DIR/whitelist.txt; cycle will use shutdown.exe's hardcoded defaults"
+        fi
+    fi
+else
+    log "No host-side whitelist at $WHITELIST_FILE; cycle will use shutdown.exe's hardcoded defaults"
 fi
 
 # 1. Dirty VM — the user's session

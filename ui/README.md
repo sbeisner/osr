@@ -1,19 +1,19 @@
 # ui/ — WPF configurator (`osr_dotnet`)
 
 A Windows desktop application that was the start of a productized version
-of OSR: per-user accounts, license tracking, a configurable whitelist, and
-a planned (but never finished) clean-ISO builder via the `DiscUtils`
-library.
+of OSR: per-user accounts, license tracking, and a configurable whitelist.
 
 The codebase **builds and runs with no cloud dependency**. Users persist to
 a local JSON file (see "Where data lives" below). You can create an account,
-log in, and configure a whitelist out of the box. The pieces that are still
-not finished are `DiscUtilsController` (stub — the ISO builder was never
-written) and `Configure.xaml.cs` (empty — the post-setup screen never got
-wired up).
+log in, and configure a whitelist out of the box.
 
-This UI is not currently wired to the `engine/` code in any way; that
-integration is a deliberate next step and is described in `../HANDOFF.md`.
+This UI is not currently wired to the `engine/` code in any way. The
+broader architectural plan is to replace this in-VM WPF app with a small
+web admin UI served by the Linux host on its Tailscale tailnet IP — see
+`../HANDOFF.md` for the rationale and the migration plan. The WPF code is
+preserved here as a working reference to the user-facing surface (login,
+whitelist editor, snapshot trigger) that the host-side replacement will
+need to provide.
 
 ## Build
 
@@ -48,7 +48,7 @@ created on first save. To reset state, delete it.
 | `AccountCreate`   | Appends a new `User` to the local user store with plaintext password and a `Random.Next()` ID. |
 | `SelectUser`      | Enumerates Windows local accounts via WMI. Writes choice to user record. |
 | `FirstTimeSetup`  | Folder-picker over the chosen Windows user dir. Writes whitelist back to the local user store. Triggers `FileSystemController.createZipArchive()`. |
-| `Configure`       | Empty. Two buttons in XAML, no click handlers wired up. |
+| `Configure`       | Two buttons wired: **Update Whitelist** navigates back to `FirstTimeSetup`; **Run Update** awaits a fresh local snapshot and reports completion via `MessageBox`. |
 | `MainWindow`      | Hosts the page navigation. Async-initializes the user store and the FileSystem controller on construct. |
 
 ## Structural notes

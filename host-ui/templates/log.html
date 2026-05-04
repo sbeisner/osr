@@ -1,0 +1,16 @@
+{% extends "_layout.html" %}
+{% block title %}OSR — Log{% endblock %}
+{% block content %}
+<h1>Host log</h1>
+<p class="hint">
+  Last {{ n }} lines of <code>{{ path }}</code>. Use <code>?n=N</code> to
+  request a different tail length (50–5000).
+</p>
+
+{% if not lines %}
+  <p>No log file yet at <code>{{ path }}</code>.</p>
+{% else %}
+  <pre class="log">{% for line, cls in lines %}<span class="line {{ cls }}">{{ line }}</span>
+{% endfor %}</pre>
+{% endif %}
+{% endblock %}

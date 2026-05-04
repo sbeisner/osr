@@ -34,11 +34,11 @@ namespace osr_dotnet.Views
             }
         }
 
-        private void Button_Click(object sender, RoutedEventArgs e)
+        private async void Button_Click(object sender, RoutedEventArgs e)
         {
             string dir = "C:\\Users\\" + comboBox.SelectedItem.ToString();
             Console.WriteLine("Updating user entry in databse with {0}\n", dir);
-            window.setUserDir(dir);
+            await window.setUserDir(dir);
             this.NavigationService.Navigate(new FirstTimeSetup());
         }
 

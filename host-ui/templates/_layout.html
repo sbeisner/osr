@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}OSR Admin{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header>
+    <nav>
+      <a href="{{ url_for('status') }}">Status</a>
+      <a href="{{ url_for('whitelist_view') }}">Whitelist</a>
+      <a href="{{ url_for('log_view') }}">Log</a>
+    </nav>
+    {% if current_user %}
+      <div class="user">
+        Signed in as <strong>{{ current_user }}</strong>
+        {% if current_login and current_login != current_user %}
+          ({{ current_login }})
+        {% endif %}
+        {% if current_tailnet %}<span class="tailnet">{{ current_tailnet }}</span>{% endif %}
+      </div>
+    {% endif %}
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>
