@@ -211,7 +211,52 @@ void parse_whitelist() {
 	}
 }
 
+// generate_whitelist() — build the VM-local whitelist.txt that parse_whitelist()
+// reads to decide which directories to copy to the shared folder.
+//
+// Priority order:
+//   1. Staged host-side whitelist at \VBoxSvr\dest\whitelist.txt (written by
+//      the host-ui Flask app and copied here by host.sh at cycle start).
+//      If present and non-empty, use it verbatim — the admin has explicitly
+//      configured what to preserve, so we honour that over the defaults.
+//   2. Fallback: the original hardcoded per-user enumeration below. This
+//      keeps pre-host-ui deployments working unchanged and gives a safe
+//      default for any host that does not yet have ~/osr-config/whitelist.txt.
+//
+// In both cases the result is written to the VM-local whitelist.txt so the
+// rest of the shutdown pipeline (verify_canaries, parse_whitelist) is
+// unchanged.
 void generate_whitelist() {
+	// --- attempt 1: staged host-side whitelist ---
+	string staged_path = SHARED + "\\whitelist.txt";
+	ifstream staged(staged_path);
+	if (staged.is_open()) {
+		// Read all non-empty, non-comment lines from the staged file.
+		vector<string> entries;
+		string ln;
+		while (getline(staged, ln)) {
+			// Strip trailing CR (file may use LF line endings written on Linux).
+			if (!ln.empty() && ln.back() == '\r') ln.pop_back();
+			// Skip blank lines and comment lines (# prefix).
+			if (ln.empty() || ln[0] == '#') continue;
+			entries.push_back(ln);
+		}
+		if (!entries.empty()) {
+			log_line("INFO  using host-staged whitelist (" + to_string(entries.size()) + " entries)");
+			ofstream whitelist("whitelist.txt");
+			for (const auto& e : entries) {
+				whitelist << e << "\n";
+			}
+			whitelist.close();
+			return;
+		}
+		// File existed but was empty (or all comments) — fall through to defaults.
+		log_line("WARN  staged whitelist at " + staged_path + " is empty; using hardcoded defaults");
+	} else {
+		log_line("INFO  no staged whitelist at " + staged_path + "; using hardcoded defaults");
+	}
+
+	// --- attempt 2: hardcoded defaults ---
 	ofstream whitelist("whitelist.txt");
 	ifstream users("users.txt");
 	string line;
